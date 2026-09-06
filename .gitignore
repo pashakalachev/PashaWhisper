@@ -1,0 +1,15 @@
+.build/
+dist/
+.DS_Store
+vendor/*.bin
+vendor/runtime/
+*.xcuserstate
+test-output/
+
+# Local secrets and captured audio
+.env
+.env.*
+!.env.example
+*.wav
+*.m4a
+*.mp3
