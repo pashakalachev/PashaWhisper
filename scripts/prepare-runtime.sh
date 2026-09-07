@@ -16,4 +16,5 @@ curl -fL --retry 2 https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml
 echo '2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987  vendor/ggml-silero.bin' | shasum -a 256 -c -
 curl -fL --retry 2 https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en-q5_1.bin -o vendor/ggml-tiny.en-q5_1.bin
 echo '3fb92ec865cbbc769f08137f22470d6b66e071b6  vendor/ggml-tiny.en-q5_1.bin' | shasum -a 1 -c -
+CMAKE_BIN="$cmake_bin" bash scripts/prepare-extra-runtime.sh
 echo 'Runtime and starter model ready. Run bash scripts/build-app.sh.'

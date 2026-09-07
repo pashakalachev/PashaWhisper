@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 export SWIFT_MODULECACHE_PATH="$PWD/.build/module-cache"
 export CLANG_MODULE_CACHE_PATH="$PWD/.build/clang-cache"
-for required in vendor/runtime/whisper-cli vendor/runtime/whisper-vad-speech-segments vendor/ggml-silero.bin vendor/ggml-tiny.en-q5_1.bin; do
+for required in vendor/runtime/whisper-cli vendor/runtime/transcribe-cli vendor/runtime/whisper-vad-speech-segments vendor/ggml-silero.bin vendor/ggml-tiny.en-q5_1.bin; do
   test -f "$required" || { echo "Missing $required. Run scripts/prepare-runtime.sh first."; exit 1; }
 done
 swift build -c release --disable-sandbox
@@ -29,7 +29,7 @@ app="$PWD/dist/PashaWhisper.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Helpers"
 cp "$bin_dir/PashaWhisper" "$app/Contents/MacOS/"
 cp -R "$bin_dir/PashaWhisper_PashaWhisper.bundle" "$app/Contents/Resources/"
-cp vendor/runtime/whisper-cli vendor/runtime/whisper-vad-speech-segments "$app/Contents/Helpers/"
+cp vendor/runtime/whisper-cli vendor/runtime/transcribe-cli vendor/runtime/whisper-vad-speech-segments "$app/Contents/Helpers/"
 cp vendor/ggml-silero.bin vendor/ggml-tiny.en-q5_1.bin "$app/Contents/Resources/"
 cp assets/cat-emblem.png "$app/Contents/Resources/"
 cp docs/THIRD_PARTY_NOTICES.md "$app/Contents/Resources/"
@@ -51,8 +51,8 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 <key>CFBundleDisplayName</key><string>PashaWhisper</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.2.6</string>
-<key>CFBundleVersion</key><string>8</string>
+<key>CFBundleShortVersionString</key><string>0.3.0</string>
+<key>CFBundleVersion</key><string>9</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>LSUIElement</key><true/>
 <key>NSMicrophoneUsageDescription</key><string>PashaWhisper records your voice only when you start dictation.</string>
@@ -61,6 +61,7 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 </dict></plist>
 PLIST
 codesign --force --sign "$signing_identity" "$app/Contents/Helpers/whisper-cli"
+codesign --force --sign "$signing_identity" "$app/Contents/Helpers/transcribe-cli"
 codesign --force --sign "$signing_identity" "$app/Contents/Helpers/whisper-vad-speech-segments"
 codesign --force --sign "$signing_identity" "$app"
 codesign --verify --deep --strict "$app"

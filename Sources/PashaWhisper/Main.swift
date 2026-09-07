@@ -163,7 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     private func showOverlay(preview: Bool = false) {
         previewEnd?.cancel(); overlayTimer?.invalidate()
-        let size = NSSize(width: 292, height: 64)
+        let size = NSSize(width: 144, height: 46)
         if overlay == nil {
             let panel = NSPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
             panel.level = .floating; panel.isOpaque = false; panel.backgroundColor = .clear
@@ -184,7 +184,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let rect = anchor.rect()
         let screen = NSScreen.screens.first(where: { $0.frame.contains(CGPoint(x: rect.midX, y: rect.midY)) }) ?? NSScreen.main
         guard let screen else { return }
-        overlay?.setFrameOrigin(OverlayPlacement.origin(anchor: rect, screen: screen.visibleFrame, size: CGSize(width: 292, height: 64)))
+        overlay?.setFrameOrigin(OverlayPlacement.origin(anchor: rect, screen: screen.visibleFrame, size: CGSize(width: 144, height: 46)))
     }
     private func hideOverlay() { overlayTimer?.invalidate(); overlayTimer = nil; overlay?.orderOut(nil) }
     private func previewOverlay() {
@@ -215,10 +215,15 @@ struct PashaWhisperMain {
             Task { @MainActor in
             do {
                 try AppPaths.prepare()
-                let model = LocalModel.catalog[0]
+                let modelID: String
+                if let modelIndex = CommandLine.arguments.firstIndex(of: "--self-test-model"), CommandLine.arguments.count > modelIndex + 1 {
+                    modelID = CommandLine.arguments[modelIndex + 1]
+                } else { modelID = LocalModel.catalog[0].id }
+                guard let model = LocalModel.catalog.first(where: { $0.id == modelID }) else { throw AppFailure.message("Unknown model: \(modelID)") }
                 let request = TranscriptionRequest(audio: URL(fileURLWithPath: CommandLine.arguments[index + 1]), model: model,
                     provider: "Offline", endpoint: "", apiModel: "", key: "", language: "en", suppression: .normal)
-                let result = try await Transcriber.transcribe(request)
+                let result = try await CommandLine.arguments.contains("--self-test-background")
+                    ? BackgroundRecognition.transcribeFile(request) : Transcriber.transcribe(request)
                 print(TranscriptFilter.clean(result, mode: .normal))
                 exit(0)
             } catch { fputs("\(error.localizedDescription)\n", stderr); exit(1) }

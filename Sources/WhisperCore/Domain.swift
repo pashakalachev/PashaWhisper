@@ -36,26 +36,56 @@ public struct LocalModel: Identifiable, Hashable {
     public let detail: String
     public let size: String
     public let sha1: String
+    public var downloadable: DownloadableModel? = nil
+    public var engine: SpeechEngine { downloadable == nil ? .whisper : .transcribe }
+    public var license: String { downloadable?.license ?? "MIT" }
+    public var family: String { downloadable?.family ?? "whisper" }
+
     public var precision: String {
+        if let downloadable { return downloadable.filename.contains("Q4_K_M") ? "Q4_K_M · 4-bit" : "Q8_0 · 8-bit" }
         if id.hasSuffix("q5_0") { return "Q5_0 · 5-bit" }
         if id.hasSuffix("q5_1") { return "Q5_1 · 5-bit" }
         if id.hasSuffix("q8_0") { return "Q8_0 · 8-bit" }
         return "F16 · 16-bit"
     }
     public var upstreamID: String {
-        "openai/whisper-" + id.replacingOccurrences(of: "-q5_0", with: "").replacingOccurrences(of: "-q5_1", with: "").replacingOccurrences(of: "-q8_0", with: "")
+        if let downloadable { return downloadable.upstreamID }
+        return "openai/whisper-" + id.replacingOccurrences(of: "-q5_0", with: "").replacingOccurrences(of: "-q5_1", with: "").replacingOccurrences(of: "-q8_0", with: "")
     }
     public var parameters: String {
+        if let downloadable { return downloadable.parameters }
         if id.hasPrefix("tiny") { return "39M" }
         if id.hasPrefix("base") { return "74M" }
         if id.hasPrefix("small") { return "244M" }
         if id.hasPrefix("medium") { return "769M" }
         return id.contains("turbo") ? "809M" : "1.55B"
     }
+    public var supportedLanguages: Set<String>? {
+        switch family {
+        case "parakeet": return Set("bg hr cs da nl en et fi fr de el hu it lv lt mt pl pt ro sk sl es sv ru uk".split(separator: " ").map(String.init))
+        case "qwen": return Set("zh en yue ar de fr es pt id it ko ru th vi ja tr hi ms nl sv da fi pl cs fil fa el hu mk ro".split(separator: " ").map(String.init))
+        case "cohere": return Set("en fr de es it pt nl pl el ar ja zh vi ko".split(separator: " ").map(String.init))
+        case "canary": return ["en"]
+        case "voxtral": return Set("en es fr pt hi de nl it ar ru zh ja ko".split(separator: " ").map(String.init))
+        default: return id.contains(".en") ? ["en"] : nil
+        }
+    }
+    public func languageIssue(_ language: String) -> String? {
+        if family == "cohere" && language == "auto" {
+            return "Cohere Transcribe requires a language. Choose your spoken language in Dictation before recording."
+        }
+        if language != "auto", let supportedLanguages, !supportedLanguages.contains(language) {
+            return "\(title) does not support the selected language. Choose a supported language in Dictation or another model."
+        }
+        return nil
+    }
     public var modelCard: URL { URL(string: "https://huggingface.co/" + upstreamID)! }
-    public var filename: String { "ggml-\(id).bin" }
-    public var url: URL { URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/\(filename)")! }
-    public static let catalog: [LocalModel] = [
+    public var filename: String { downloadable?.filename ?? "ggml-\(id).bin" }
+    public var url: URL { if let downloadable { return downloadable.url }; return URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/\(filename)")! }
+    public static let catalog: [LocalModel] = whisperModels + DownloadableModel.catalog.map { item in
+        LocalModel(id: item.id, title: item.title, detail: item.detail, size: item.size, sha1: "", downloadable: item)
+    }
+    private static let whisperModels: [LocalModel] = [
         .init(id: "tiny.en-q5_1", title: "OpenAI Whisper Tiny.en", detail: "Quick start · English · Q5", size: "31 MiB", sha1: "3fb92ec865cbbc769f08137f22470d6b66e071b6"),
         .init(id: "base", title: "OpenAI Whisper Base", detail: "Lightweight · Multilingual", size: "142 MiB", sha1: "465707469ff3a37a2b9b8d8f89f2f99de7299dac"),
         .init(id: "small", title: "OpenAI Whisper Small", detail: "Everyday · Multilingual", size: "466 MiB", sha1: "55356645c2b361a969dfd0ef2c5a50d530afd8d5"),

@@ -21,3 +21,7 @@ Use case: logo-brand. Asset type: macOS app icon for PashaWhisper, a personal sp
 ## Final refinement
 
 The final clean emblem is assets/cat-emblem.png. The original textured version is preserved as assets/cat-emblem-v1.png. Both were made with the built-in image tool. The complete final edit prompt is in LOGO_PROMPT.txt.
+
+## Recording overlay refinement — September 7, 2026
+
+The overlay is intentionally softer and smaller than the main interface: a dark capsule, central cream cat, and five short rounded waveform bars radiating on each side. Use a red progress arc during finalization, with a static arc for Reduce Motion. Do not show time, model, shortcut, or recording labels. Screen-reader labels describe state; detailed errors remain in the main app.

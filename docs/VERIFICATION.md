@@ -1,4 +1,26 @@
-# Verification — 0.2.6 — September 7, 2026
+# Verification — 0.3.0 — September 7, 2026
+
+- All 38 automated tests pass. Added coverage for 48 kHz stereo microphone-buffer conversion to 16 kHz mono, resampler flush, agreement between saved and submitted audio, pause and forced-boundary sample coverage, ordered background results before Stop, overlap-only deduplication, and cancellation (including an already-completed result). Pure digital silence needs no engine process. Existing shortcut, permission, and delivery tests still pass.
+- Verified immutable artifact revisions, file sizes, and SHA-256 checks for all six new model downloads. Each then transcribed the public upstream 11-second JFK fixture through the app's background pipeline with English selected and speech filtering enabled. These single-run wall times include model loading and filtering; they are smoke tests, not quality rankings or benchmarks:
+
+| Model | Result | Wall time |
+| --- | --- | --- |
+| Parakeet TDT 0.6B v3 Q8_0 | Expected speech | 1.20 s |
+| Qwen3-ASR 0.6B Q8_0 | Expected speech | 1.83 s |
+| Qwen3-ASR 1.7B Q8_0 | Expected speech | 4.15 s |
+| Cohere Transcribe 03-2026 Q8_0 | Expected speech | 3.45 s |
+| Canary-Qwen 2.5B Q8_0 | Expected speech | 6.35 s |
+| Voxtral Mini 4B Realtime 2602 Q4_K_M | Expected speech | 11.77 s |
+
+- Tiny.en also passed the app's chunked path. A four-phrase Parakeet fixture preserved every repeated phrase exactly once. Qwen 0.6B returned empty output for digital silence. Cohere's required language and incompatible model/language selections are blocked before recording; invalid downloaded model bytes are rejected.
+- A paced fixture fed two public speech clips with two-second digital-silence pauses through the production background-recognition factory, without using the microphone or clipboard. Final Parakeet Stop-to-ready time was 0.090 s; starting recognition after Stop took 1.532 s. An earlier instrumented run completed both speech chunks before Stop but spent 0.598 s checking the silent tail; the final implementation skips that digital-silence check. An initial run had a 10.06 s backlog, so these uncontrolled single-run timings establish operation, not a guaranteed latency target. Room silence, contention, long continuous speech, and larger models can leave pending work after Stop.
+- Inspected native previews of the expanded model catalog and the transparent 144 × 46 point recording/processing capsule. It contains the cat, mirrored outward-moving waveform history, and a loading arc, with no visible recording label, elapsed time, shortcut, or model name. Detailed errors remain in the main app; accessibility labels and Reduce Motion are supported.
+- Built the pinned transcribe.cpp runtime with embedded Metal shaders and system-only dynamic dependencies. Both speech engines are bundled. New weights are installed locally from the verified smoke-test downloads; the user's existing selected model is preserved.
+- Native release build and deep/strict signing verification pass using the existing certificate identity. The running 0.2.6 app has a current in-memory transcript and was kept open; the user must preserve that result, quit, and reopen to load 0.3.0.
+
+Not verified in this pass: end-to-end physical microphone/pedal-to-paste use, broad language accuracy, real-room/long-session latency, or minimum-OS compatibility. This is ordered phrase/chunk recognition during offline recording, not native token streaming or persistent warm-model reuse. API transcription still uploads after Stop. See [BUILD_STATUS.md](BUILD_STATUS.md) for release limitations.
+
+## Previous verification — 0.2.6 — September 7, 2026
 
 - Reproduced the actual permission mismatch in the running app: Accessibility allowed, event posting denied, microphone authorized. Rechecking and requesting event access did not clear it. Quitting and relaunching the same signed app changed event posting to allowed, with no further permission changes.
 - Setup now distinguishes this state from missing Accessibility and offers Restart PashaWhisper. Previewed the restart state in an isolated native SwiftUI window.

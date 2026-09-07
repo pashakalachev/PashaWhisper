@@ -13,7 +13,7 @@ This repository contains the source; build the app using the **Develop** instruc
 1. Open the app. **Setup** is the first screen: allow automatic paste in macOS Accessibility, then allow the microphone. Click **Finish Setup** when both permissions are verified.
 2. Focus a text field in another app and press **Option-Space** (customizable in **Shortcuts**).
 3. Speak, then press your shortcut again.
-4. Wait for **Transcribing**, then the completed text is pasted into the original field. **Copy Transcript** remains available if delivery is blocked.
+4. Offline recognition works in the background while you speak. After Stop, a small ring around the cat indicates any unfinished audio; then the completed text is pasted into the original field. **Copy Transcript** remains available if delivery is blocked.
 
 Automatic paste is the default workflow, not an opt-in feature. The app checks field access and permission to post paste commands separately and refreshes the setup screen while Settings is open. If Accessibility is allowed but paste-command access still reports denied, Setup offers **Restart PashaWhisper** to clear the stale process state. Restart is disabled during active work or while a current result or retry audio would be lost. If field access itself is still denied despite an enabled entry, remove the old entry with **−**, then use **+** to add the exact app shown by **Show This App in Finder**, enable it, and return to Setup. Quit/reopen that copy if needed. This one-time migration may be needed when moving from an old ad-hoc build to certificate signing.
 
@@ -27,9 +27,11 @@ Download a larger or multilingual model from Models. Choose OpenAI or Custom API
 
 No transcript history is stored. Only the current result stays in memory until cleared, replaced by another recording, or Quit. Temporary audio is deleted after success, silence, cancellation, and Quit. A failed recording can be retried during the session; crash leftovers are deleted next launch. Upgrading removes the old history and recording archive. Copied or automatically pasted text remains on the clipboard.
 
-The floating cat indicator displays preparation, recording with a live microphone waveform, transcription, paste, and actionable failure states. Missing models, API keys, or bundled engines are reported before microphone capture begins. Enable Accessibility under **Shortcuts → Enable Field Positioning** to follow the active cursor or text field. It falls back to the pointer for unavailable fields or permission. Preview the indicator without recording from the same page.
+The floating indicator is a 144 × 46 point capsule: a cat with five waveform bars on either side, a finishing ring, and small success/error indicators. It contains no timer, model name, shortcut, or recording label. Detailed errors open the main app. Missing models, API keys, or bundled engines are reported before microphone capture begins. Enable Accessibility under **Shortcuts → Enable Field Positioning** to follow the active cursor or text field. It falls back to the pointer for unavailable fields or permission. Preview the indicator without recording from the same page.
 
-The catalog names 13 exact Whisper variants, including Large v3 and Large v3 Turbo in explicit precisions. See the [model inventory](docs/MODELS.md) for supported artifacts and additional engine plans.
+The catalog includes NVIDIA Parakeet TDT v3, Qwen3-ASR 0.6B/1.7B, Cohere Transcribe 03-2026, NVIDIA Canary-Qwen 2.5B, Mistral Voxtral Mini 4B Realtime 2602, and 13 Whisper variants. Each entry names its exact quantization, download size, original publisher, and license. See the [model inventory](docs/MODELS.md).
+
+Offline background recognition submits phrase-sized audio after pauses, with an 18-second maximum chunk and a one-second overlap at forced boundaries. Completed phrases are retained only in memory; Stop waits for outstanding work and the final tail, then pastes once. This is incremental chunked recognition, not token-by-token native streaming. Large models or sustained speech may still require a finishing delay. API mode continues to upload after Stop. Models are loaded per chunk; a persistent warm engine is future optimization.
 
 ## Develop
 
@@ -42,7 +44,7 @@ swift test
 open dist/PashaWhisper.app
 ```
 
-Set `CMAKE_BIN` if CMake is installed outside PATH. Runtime sources are pinned to whisper.cpp v1.8.6, statically linked with Metal shaders embedded. No machine-specific Homebrew library paths are packaged. Downloads and native build products are excluded from Git; the bootstrap script reproduces them.
+Set `CMAKE_BIN` if CMake is installed outside PATH. Runtime sources are pinned to whisper.cpp v1.8.6 and transcribe.cpp revision e2f82cb6702315a1194f3bf1a6fee67cd2678447, statically linked with Metal shaders embedded. The additional engine is prepared by `scripts/prepare-extra-runtime.sh`, which the main preparation script invokes. No machine-specific Homebrew library paths are packaged. Downloads and native build products are excluded from Git; the bootstrap script reproduces them.
 
 The build script uses a stable signing certificate: it prefers a unique Developer ID Application identity, otherwise a unique Apple Development identity. Set `CODE_SIGN_IDENTITY` explicitly when there are multiple certificates. The current local build uses Apple Development signing. Developer ID signing and notarization are still required for a public production release. Ad-hoc signing is available only by explicitly setting `CODE_SIGN_IDENTITY=-` for disposable builds; changing those binaries can invalidate existing macOS permissions.
 

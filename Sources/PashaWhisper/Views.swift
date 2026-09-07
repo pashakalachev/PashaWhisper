@@ -35,7 +35,7 @@ struct MainView: View {
                     Text(model.provider == "Offline" ? "LOCAL BY DEFAULT" : "CLOUD SELECTED").font(Theme.mono(10))
                 }
                 Text("Small app. Big ears.").font(.system(size: 12)).foregroundStyle(Theme.muted).padding(.top, 8)
-                Text("EARLY BUILD  /  0.2.6").font(Theme.mono(9)).foregroundStyle(Theme.muted).padding(.top, 20)
+                Text("EARLY BUILD  /  0.3.0").font(Theme.mono(9)).foregroundStyle(Theme.muted).padding(.top, 20)
             }.padding(22).frame(width: 230).background(Theme.paper)
             Rectangle().fill(Theme.ink).frame(width: 2)
             VStack(spacing: 0) {
@@ -174,8 +174,10 @@ struct DictationView: View {
             VStack(alignment: .leading, spacing: 8) {
                 SmallLabel(text: "Language")
                 Picker("Language", selection: $model.language) {
-                    Text("Automatic").tag("auto"); Text("English").tag("en"); Text("Russian").tag("ru")
-                    Text("Spanish").tag("es"); Text("French").tag("fr"); Text("German").tag("de")
+                    Text("Automatic").tag("auto")
+                    ForEach(SpeechLanguage.choices, id: \.code) { language in
+                        Text(language.name).tag(language.code)
+                    }
                 }.labelsHidden().frame(width: 130)
             }
         }.disabled(model.busy)
@@ -225,7 +227,7 @@ struct ModelsView: View {
     @EnvironmentObject var model: AppModel
     @State private var query = ""
     var filtered: [LocalModel] {
-        LocalModel.catalog.filter { query.isEmpty || "\($0.title) \($0.id) \($0.precision)".localizedCaseInsensitiveContains(query) }
+        LocalModel.catalog.sorted { ($0.engine == .transcribe ? 0 : 1) < ($1.engine == .transcribe ? 0 : 1) }.filter { query.isEmpty || "\($0.title) \($0.id) \($0.precision)".localizedCaseInsensitiveContains(query) }
     }
     var body: some View {
         PageHeading(number: "02 — Models", title: "KNOW YOUR EARS.", subtitle: "Exact models. Exact versions. No mystery presets.")
@@ -238,11 +240,11 @@ struct ModelsView: View {
             }
         }
         HStack {
-            Text("\(LocalModel.catalog.count) Whisper variants · whisper.cpp 1.8.6").font(Theme.mono(11))
+            Text("6 model families · \(LocalModel.catalog.count) downloads").font(Theme.mono(11))
             Spacer()
         }
         TextField("Search a model, version, or precision…", text: $query).textFieldStyle(.roundedBorder)
-        Text("F16 is the original inference precision. Q8 and Q5 reduce download size and memory, with a possible accuracy tradeoff. All models below are OpenAI Whisper, converted for whisper.cpp.")
+        Text("Choose by language, size, and your own recordings. Q8, Q5, and Q4 reduce weight precision and download size; accuracy and speed vary by model. Downloads run locally with bundled engines.")
             .font(.system(size: 12)).foregroundStyle(Theme.muted).lineSpacing(4)
         VStack(spacing: 0) {
             ForEach(filtered) { item in
@@ -252,6 +254,7 @@ struct ModelsView: View {
                             Text(item.title).font(.system(size: 17, weight: .bold)).fixedSize(horizontal: false, vertical: true)
                             Text("\(item.precision) · \(item.parameters) parameters · \(item.size)").font(Theme.mono(10)).foregroundStyle(Theme.red)
                             Text(item.detail).font(.system(size: 11)).foregroundStyle(Theme.muted)
+                            Text("\(item.engine.label) · \(item.license)").font(Theme.mono(10)).foregroundStyle(Theme.muted)
                         }.frame(maxWidth: .infinity, alignment: .leading)
                         if model.installed.contains(item.id) {
                             VStack(alignment: .trailing, spacing: 10) {
@@ -281,16 +284,8 @@ struct ModelsView: View {
                 Rule()
             }
         }.overlay(Rectangle().stroke(Theme.ink, lineWidth: 2))
-        if filtered.isEmpty { Text("No matching model. Try Whisper, Turbo, Q5, Q8, or F16.").font(.system(size: 13)) }
-        SmallLabel(text: "Next engines · not available in this build")
-        Text("NVIDIA Parakeet TDT 0.6B v3\nQwen3-ASR 0.6B / 1.7B").font(.system(size: 15, weight: .semibold)).lineSpacing(6)
-        Text("These are separate model families, not other Whisper sizes. They need their own native adapters and evaluation before we can offer downloads.").font(.system(size: 12)).foregroundStyle(Theme.muted).lineSpacing(4)
-        HStack {
-            Link("Whisper artifacts ↗", destination: URL(string: "https://huggingface.co/ggerganov/whisper.cpp")!)
-            Spacer()
-            Link("Parakeet ↗", destination: URL(string: "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3")!)
-            Link("Qwen3-ASR ↗", destination: URL(string: "https://github.com/QwenLM/Qwen3-ASR")!)
-        }.font(Theme.mono(11))
+        if filtered.isEmpty { Text("No matching model. Try Parakeet, Qwen, Cohere, Canary, Voxtral, or Whisper.").font(.system(size: 13)) }
+        Text("Model weights are optional downloads. Quantized conversions are provided by the whisper.cpp and transcribe.cpp communities; each model card links to its original publisher.").font(.system(size: 12)).foregroundStyle(Theme.muted).lineSpacing(4)
     }
 }
 
@@ -418,35 +413,46 @@ struct RecordingOverlay: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var preview = false
-    private var amplitudes: [Float] {
-        preview ? [0.12,0.2,0.4,0.7,0.9,0.5,0.3,0.6,1,0.8,0.4,0.2,0.15,0.45,0.75,0.95,0.6,0.3,0.5,0.8,0.35,0.1] : model.levels
-    }
+    private var listening: Bool { preview || model.recording }
+    private var working: Bool { !listening && (model.preparing || model.transcribing || model.overlayTitle == "PASTING") }
+    private var success: Bool { model.overlayTitle == "PASTE SENT" }
     var body: some View {
-        HStack(spacing: 12) {
-            CatMark(color: Theme.paper, eyeColor: Theme.ink).frame(width: 31, height: 31)
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 5) {
-                    Circle().fill(Theme.red).frame(width: 5, height: 5)
-                    Text(preview ? "PREVIEW" : model.overlayTitle).font(Theme.mono(8)).tracking(1.3)
-                }
-                if preview || model.recording {
-                    HStack(alignment: .center, spacing: 3) {
-                        ForEach(Array(amplitudes.enumerated()), id: \.offset) { _, amplitude in
-                            RoundedRectangle(cornerRadius: 1).fill(Theme.paper)
-                                .frame(width: 3, height: max(3, CGFloat(amplitude) * 24))
+        HStack(spacing: 9) {
+            wave(reverse: true)
+            ZStack {
+                CatMark(color: Theme.paper, eyeColor: Theme.ink).frame(width: 26, height: 26)
+                if working {
+                    if reduceMotion {
+                        Circle().trim(from: 0.05, to: 0.8).stroke(Theme.red, lineWidth: 2).frame(width: 34, height: 34)
+                    } else {
+                        TimelineView(.animation(minimumInterval: 1.0 / 24)) { context in
+                            Circle().trim(from: 0.05, to: 0.8).stroke(Theme.red, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                                .frame(width: 34, height: 34)
+                                .rotationEffect(.degrees(context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1) * 360))
                         }
-                    }.frame(height: 24).animation(reduceMotion || preview ? nil : .linear(duration: 0.08), value: amplitudes)
-                        .accessibilityLabel(preview ? "Sample waveform" : "Live microphone waveform")
-                } else {
-                    Text(model.overlayDetail).font(.system(size: 10)).lineLimit(2).frame(height: 27, alignment: .leading)
+                    }
+                } else if !listening {
+                    Image(systemName: success ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                        .font(.system(size: 12, weight: .bold)).foregroundStyle(success ? Theme.paper : Theme.red)
+                        .background(Theme.ink, in: Circle()).offset(x: 14, y: 10)
                 }
+            }.frame(width: 36, height: 36)
+            wave(reverse: false)
+        }.padding(.horizontal, 12).frame(width: 144, height: 46)
+            .background(Theme.ink.opacity(0.96), in: Capsule())
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(listening ? "Recording" : working ? "Finishing transcription" : model.overlayTitle)
+    }
+    private func wave(reverse: Bool) -> some View {
+        HStack(spacing: 3) {
+            ForEach(0..<5) { index in
+                let distance = reverse ? 4 - index : index
+                let sampleIndex = model.levels.count - 1 - distance
+                let amplitude = preview ? Float(5 - distance) * 0.13 : model.levels.indices.contains(sampleIndex) ? model.levels[sampleIndex] : 0
+                Capsule().fill(Theme.paper.opacity(listening ? 0.92 : 0.25))
+                    .frame(width: 3, height: listening ? max(3, CGFloat(amplitude) * CGFloat(25 - distance * 3)) : 3)
             }
-            Spacer(minLength: 0)
-            VStack(alignment: .trailing, spacing: 6) {
-                Text(String(format: "%02d:%02d", Int(model.elapsed) / 60, Int(model.elapsed) % 60)).font(Theme.mono(13))
-                Text(model.shortcut.display).font(Theme.mono(9)).opacity(0.7)
-            }
-        }.padding(.horizontal, 14).foregroundStyle(Theme.paper).frame(width: 292, height: 64)
-            .background(Theme.ink).overlay(Rectangle().stroke(Theme.red, lineWidth: 1.5))
+        }.frame(width: 27, height: 28)
+            .animation(reduceMotion || preview ? nil : .linear(duration: 0.08), value: model.levels)
     }
 }

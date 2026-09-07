@@ -176,3 +176,11 @@ The fastest personal workaround could be investigating Handy's existing delivery
 ### Permission refresh recovery
 
 When Accessibility is approved but the running process still reports paste-command access denied, Setup must acknowledge the grant and offer a restart to recheck access. Do not send users through repeated Accessibility approval. Restart must preserve active recording, processing, downloads, current results, and retry audio by requiring those to be completed or explicitly cleared first.
+
+### Expanded local models and background recognition — September 7, 2026
+
+Offer real downloadable NVIDIA Parakeet TDT 0.6B v3, Qwen3-ASR 0.6B/1.7B, Cohere Transcribe 03-2026, NVIDIA Canary-Qwen 2.5B, and Mistral Voxtral Mini 4B Realtime 2602 alongside Whisper. Route each model to its compatible bundled native runtime. Show original model IDs, conversion provenance, language coverage, quantization, download sizes, and licenses; pin new downloads to immutable revisions and validate SHA-256 before installation. Do not imply one model is universally best.
+
+Begin local recognition while the user speaks. Preserve the complete recovery recording, process phrase-sized chunks in order, retain overlap at forced boundaries, and finalize remaining work on Stop before issuing a single verified paste. Canceled or failed jobs must never paste partial text. First implementation is background chunking; native streaming and persistent model reuse remain follow-up latency improvements. Cloud uploads remain after Stop.
+
+Replace the recording banner with a compact cat and short waveforms on both sides. Remove timer, recording label, model name, and shortcut. Display a simple loading arc when final processing is needed, then success or attention indicators. Keep the panel nonactivating, near the original field, and accessible without visible labels.

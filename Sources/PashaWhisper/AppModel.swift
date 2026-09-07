@@ -46,6 +46,7 @@ final class AppModel: ObservableObject {
     @Published var apiModel: String { didSet { UserDefaults.standard.set(apiModel, forKey: "apiModel") } }
     private let permissionReader: () -> PermissionState
     private let recorder = AudioRecorder()
+    private var backgroundRecognition: BackgroundRecognition?
     private var timer: Timer?
     private var sessionID: UUID?
     private var currentAudio: URL?
@@ -71,6 +72,7 @@ final class AppModel: ObservableObject {
     var readinessIssue: String? {
         if storageFailed { return "Recording storage is unavailable. Restart the app after checking free disk space." }
         if provider == "Offline" {
+            if let issue = model.languageIssue(language) { return issue }
             guard LocalModel.catalog.contains(where: { $0.id == selectedModel }), installed.contains(selectedModel) else {
                 return "Download or select an installed model in Models before recording."
             }
@@ -211,10 +213,15 @@ final class AppModel: ObservableObject {
         discardAudio(); latest = nil
         let audio = AppPaths.recordings.appendingPathComponent("\(id.uuidString).wav")
         do {
+            if provider == "Offline" {
+                let recognition = BackgroundRecognition.forRequest(makeRequest(audio: audio))
+                backgroundRecognition = recognition
+                recorder.onSamples = { [weak recognition] in recognition?.append($0) }
+            } else { recorder.onSamples = nil }
             try recorder.start(url: audio)
             currentAudio = audio; recording = true; elapsed = 0; levels = Array(repeating: 0, count: 22)
             status = "Listening. Take your time."
-            detail = provider == "Offline" ? providerLabel : "Will send audio to \(provider) when you stop."
+            detail = provider == "Offline" ? "Transcribing in the background · \(providerLabel)" : "Will send audio to \(provider) when you stop."
             timer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
                 Task { @MainActor in
                     guard let self, self.recording else { return }
@@ -224,13 +231,14 @@ final class AppModel: ObservableObject {
             }
             onRecordingChange?(true)
             showOverlay("RECORDING", providerLabel)
-        } catch { needsAttention(error.localizedDescription, section: "Privacy", title: "MICROPHONE ERROR"); try? FileManager.default.removeItem(at: audio) }
+        } catch { backgroundRecognition?.cancel(); backgroundRecognition = nil; needsAttention(error.localizedDescription, section: "Privacy", title: "MICROPHONE ERROR"); try? FileManager.default.removeItem(at: audio) }
     }
     func stopAndTranscribe() {
         guard recording, let audio = currentAudio, let id = sessionID else { return }
-        elapsed = recorder.duration; recorder.stop(); timer?.invalidate(); timer = nil
+        recorder.stop(); elapsed = recorder.duration; timer?.invalidate(); timer = nil
         recording = false; transcribing = true; level = 0; onRecordingChange?(false)
-        operation = Task { await process(audio, id: id, duration: elapsed) }
+        let captureFailure = recorder.captureFailure
+        operation = Task { await process(audio, id: id, duration: elapsed, captureFailure: captureFailure) }
     }
     func retryCurrent() {
         guard !busy, let audio = currentAudio, retryAvailable else { return }
@@ -242,10 +250,11 @@ final class AppModel: ObservableObject {
         TranscriptionRequest(audio: audio, model: model, provider: provider, endpoint: actualEndpoint,
             apiModel: actualAPIModel, key: provider == "Offline" ? "" : Keychain.load(account: keyAccount), language: language, suppression: suppression)
     }
-    private func process(_ audio: URL, id: UUID, duration: TimeInterval) async {
+    private func process(_ audio: URL, id: UUID, duration: TimeInterval, captureFailure: String? = nil) async {
         guard !storageFailed, !Task.isCancelled, sessionID == id else { return }
         transcribing = true; retryAvailable = false; error = nil
-        status = "Turning sound into words…"; detail = "Processing with \(providerLabel)."
+        status = backgroundRecognition == nil ? "Turning sound into words…" : "Finishing your last words…"
+        detail = "Processing with \(providerLabel)."
         let providerName = providerLabel
         let request = makeRequest(audio: audio)
         let started = Date()
@@ -257,7 +266,16 @@ final class AppModel: ObservableObject {
             } else { try? FileManager.default.removeItem(at: audio) }
         }
         do {
-            let raw = try await Transcriber.transcribe(request)
+            if let failure = captureFailure {
+                backgroundRecognition?.cancel(); backgroundRecognition = nil
+                throw AppFailure.message(failure + " Retry can recover the saved portion, which may be incomplete.")
+            }
+            let raw: String
+            if let background = backgroundRecognition {
+                defer { if backgroundRecognition === background { backgroundRecognition = nil } }
+                raw = try await background.finish()
+            } else if request.provider == "Offline" { raw = try await BackgroundRecognition.transcribeFile(request) }
+            else { raw = try await Transcriber.transcribe(request) }
             try Task.checkCancellation(); guard sessionID == id else { return }
             processingSeconds = Date().timeIntervalSince(started)
             let text = TranscriptFilter.clean(raw, mode: request.suppression)
@@ -293,7 +311,8 @@ final class AppModel: ObservableObject {
     }
     func clearCurrent() { guard !busy else { return }; latest = nil; discardAudio(); status = "Ready when you are."; detail = "Current result cleared." }
     func cancel() {
-        operation?.cancel(); recorder.stop(); timer?.invalidate(); timer = nil
+        operation?.cancel(); recorder.stop(); backgroundRecognition?.cancel(); backgroundRecognition = nil
+        recorder.onSamples = nil; timer?.invalidate(); timer = nil
         sessionID = nil; recording = false; preparing = false; transcribing = false; level = 0
         onRecordingChange?(false); discardAudio()
         status = "Canceled."; detail = "Recording deleted. Nothing copied."
@@ -321,11 +340,11 @@ final class AppModel: ObservableObject {
                 }
                 defer { try? FileManager.default.removeItem(at: url) }
                 downloadStatus = "Checking integrity…"
-                try await Task.detached { try ModelDownload.verify(url, expected: model.sha1) }.value
+                try await Task.detached { try ModelDownload.verify(url, model: model) }.value
                 try Task.checkCancellation()
                 let destination = AppPaths.models.appendingPathComponent(model.filename)
                 if !FileManager.default.fileExists(atPath: destination.path) { try FileManager.default.moveItem(at: url, to: destination) }
-                downloadStatus = "Installed"; selectedModel = model.id
+                downloadStatus = "Installed"; if !busy { selectedModel = model.id }
             } catch is CancellationError { downloadStatus = "Canceled" }
             catch let error as URLError where error.code == .cancelled { downloadStatus = "Canceled" }
             catch { self.error = error.localizedDescription; downloadStatus = "Download failed" }

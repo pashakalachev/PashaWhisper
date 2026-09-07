@@ -59,22 +59,6 @@ enum Keychain {
     }
 }
 
-final class AudioRecorder {
-    private var recorder: AVAudioRecorder?
-    var duration: TimeInterval { recorder?.currentTime ?? 0 }
-    var level: Float { recorder?.updateMeters(); return max(0, min(1, pow(10, (recorder?.averagePower(forChannel: 0) ?? -80) / 20) * 5)) }
-    func start(url: URL) throws {
-        let settings: [String: Any] = [AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 16000,
-            AVNumberOfChannelsKey: 1, AVLinearPCMBitDepthKey: 16,
-            AVLinearPCMIsFloatKey: false, AVLinearPCMIsBigEndianKey: false]
-        let value = try AVAudioRecorder(url: url, settings: settings)
-        value.isMeteringEnabled = true
-        guard value.prepareToRecord(), value.record() else { throw AppFailure.message("The microphone could not start. Check microphone access and your input device.") }
-        recorder = value
-    }
-    func stop() { recorder?.stop(); recorder = nil }
-}
-
 // No pipe can fill and deadlock a long transcription. Logs stay in a private temporary directory.
 final class ProcessRunner: @unchecked Sendable {
     private let lock = NSLock()
@@ -130,15 +114,16 @@ enum Transcriber {
     static func validate(_ request: TranscriptionRequest) throws {
         if request.suppression != .off {
             guard FileManager.default.fileExists(atPath: AppPaths.vad.path),
-                  request.provider == "Offline" || FileManager.default.isExecutableFile(atPath: AppPaths.runtime.appendingPathComponent("whisper-vad-speech-segments").path) else {
+                  (request.provider == "Offline" && request.model.engine == .whisper) || FileManager.default.isExecutableFile(atPath: AppPaths.runtime.appendingPathComponent("whisper-vad-speech-segments").path) else {
                 throw AppFailure.message("The speech detector is missing from this app. Reinstall the complete PashaWhisper app.")
             }
         }
         if request.provider == "Offline" {
+            if let issue = request.model.languageIssue(request.language) { throw AppFailure.message(issue) }
             guard FileManager.default.fileExists(atPath: AppPaths.models.appendingPathComponent(request.model.filename).path) else {
                 throw AppFailure.message("The selected model is not installed. Download or select a model in Models.")
             }
-            guard FileManager.default.isExecutableFile(atPath: AppPaths.runtime.appendingPathComponent("whisper-cli").path) else {
+            guard FileManager.default.isExecutableFile(atPath: AppPaths.runtime.appendingPathComponent(request.model.engine.executable).path) else {
                 throw AppFailure.message("The offline speech engine is missing. Reinstall the complete PashaWhisper app.")
             }
         } else { _ = try EndpointPolicy.validate(request.endpoint) }
@@ -152,7 +137,7 @@ enum Transcriber {
         let threshold = request.suppression == .strong ? "0.65" : "0.5"
         // Local whisper.cpp runs VAD inside recognition; do not scan the same
         // recording twice. Cloud requests still check locally before any upload.
-        if request.suppression != .off && request.provider != "Offline" {
+        if request.suppression != .off && (request.provider != "Offline" || request.model.engine != .whisper) {
             let result = try await runner.run(AppPaths.runtime.appendingPathComponent("whisper-vad-speech-segments"),
                 arguments: ["-vm", AppPaths.vad.path, "-f", request.audio.path, "-vt", threshold, "-vp", "200", "-np"],
                 log: temp.appendingPathComponent("vad.log"))
@@ -162,6 +147,15 @@ enum Transcriber {
             if result.contains("Detected 0 speech segments:") { return "" }
         }
         try Task.checkCancellation()
+        if request.provider == "Offline", request.model.engine == .transcribe {
+            let output = temp.appendingPathComponent("transcript.txt")
+            var args = ["-m", AppPaths.models.appendingPathComponent(request.model.filename).path,
+                        "-o", output.path, "-q", "--threads", "4"]
+            if request.language != "auto" { args += ["-l", request.language] }
+            args.append(request.audio.path)
+            _ = try await runner.run(AppPaths.runtime.appendingPathComponent("transcribe-cli"), arguments: args, log: temp.appendingPathComponent("engine.log"))
+            return try String(contentsOf: output, encoding: .utf8)
+        }
         if request.provider == "Offline" {
             let output = temp.appendingPathComponent("transcript")
             var args = ["-m", AppPaths.models.appendingPathComponent(request.model.filename).path,
@@ -237,6 +231,17 @@ final class ModelDownload: NSObject, URLSessionDownloadDelegate, @unchecked Send
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         if let error { continuation?.resume(throwing: error); continuation = nil }
         session.finishTasksAndInvalidate(); self.session = nil
+    }
+    static func verify(_ url: URL, model: LocalModel) throws {
+        guard let artifact = model.downloadable else { return try verify(url, expected: model.sha1) }
+        let handle = try FileHandle(forReadingFrom: url); defer { try? handle.close() }
+        var hash = SHA256(); var bytes: Int64 = 0
+        while let data = try handle.read(upToCount: 1_048_576), !data.isEmpty {
+            try Task.checkCancellation(); hash.update(data: data); bytes += Int64(data.count)
+        }
+        guard bytes == artifact.bytes, hash.finalize().map({ String(format: "%02x", $0) }).joined() == artifact.sha256 else {
+            throw AppFailure.message("The downloaded model failed its integrity check. It was not installed.")
+        }
     }
     static func verify(_ url: URL, expected: String) throws {
         let handle = try FileHandle(forReadingFrom: url); defer { try? handle.close() }
