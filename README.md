@@ -15,6 +15,8 @@ This repository contains the source; build the app using the **Develop** instruc
 3. Speak, then press your shortcut again.
 4. Click **Copy Transcript** and paste into your destination app.
 
+Shortcuts accept single keys (including Space, Escape, and F-keys), modifier-only taps, Fn/Globe, and multi-key chords. Press and release the combination to save it. Some bindings require Accessibility; use **Enable Shortcut Access** when shown. Modifier-only shortcuts trigger on release, and using a modifier to type or click does not trigger dictation. macOS may reserve some hardware/system combinations.
+
 Closing the window leaves the app in the menu bar. Use the cat menu to reopen it or quit. The first build deliberately uses manual copying; automatic insertion is not yet implemented.
 
 Download a larger or multilingual model from Models. Choose OpenAI or Custom API under Providers to use your own key. Keys are stored in macOS Keychain. Cloud recording is always an explicit choice. API integration has not been tested against a paid live account.

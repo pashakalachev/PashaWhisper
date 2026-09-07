@@ -28,7 +28,7 @@ Open-source speech models are still AI. Whisper's own documentation describes ha
 
 Silence produces “No speech detected,” leaves the clipboard untouched, and inserts nothing. A pause does not end a recording unless the user explicitly enables an automatic stop option in a later release.
 
-The overlay must not steal keyboard focus. Escape cancels. Show “Preparing model” separately from “Recording”; never imply that audio is being captured before capture has actually started.
+The overlay must not steal keyboard focus. Escape cancels in the app unless assigned as the dictation shortcut. Show “Preparing model” separately from “Recording”; never imply that audio is being captured before capture has actually started.
 
 ## 3. Required capabilities
 
@@ -120,7 +120,7 @@ Apply this identity across the app icon, menu-bar mark, recording overlay, setti
 
 The first emblem is in assets/cat-emblem.png; its prompt and provenance are in docs/BRAND.md. The interface uses shared native SwiftUI styling.
 
-Use menu-bar controls, a recording overlay, and a dismissible utility window with Dictation, Models, Providers, Shortcuts, and Privacy. No History screen. The Shortcuts page records a Command/Option/Control key combination, validates registration, persists it, and provides Cancel and Reset. The default is Option-Space; hold-to-record remains a later addition.
+Use menu-bar controls, a recording overlay, and a dismissible utility window with Dictation, Models, Providers, Shortcuts, and Privacy. No History screen. The Shortcuts page accepts single keys, Shift-only combinations, left/right modifier keys, Fn/Globe, Caps Lock, and simultaneous multi-key chords. Capture finishes on release; Escape is bindable and Cancel is a button. Existing saved shortcuts remain compatible. Use native hotkey registration where supported and a permission-aware event tap for other chords. Save the choice even when Accessibility permission is still needed, show its inactive status, and activate it after permission is granted. Modifier-only taps fire on release and must not fire after typing or clicking with the modifier. System-reserved keys that macOS does not deliver cannot be promised. The default is Option-Space; hold-to-record remains a later addition.
 
 Recommended implementation: Swift and SwiftUI for the interface, AppKit and Accessibility APIs for Mac integration, AVAudioEngine for recording, whisper.cpp for the first local backend, and a second adapter for Parakeet. Use URLSession for providers, Keychain for secrets, and in-memory current-result state plus temporary audio for processing.
 

@@ -8,6 +8,6 @@ let package = Package(
     targets: [
         .target(name: "WhisperCore"),
         .executableTarget(name: "PashaWhisper", dependencies: ["WhisperCore"], resources: [.copy("Resources/cat-emblem.png")]),
-        .testTarget(name: "WhisperCoreTests", dependencies: ["WhisperCore"])
+        .testTarget(name: "WhisperCoreTests", dependencies: ["WhisperCore", "PashaWhisper"])
     ]
 )

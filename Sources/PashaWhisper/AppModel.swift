@@ -18,6 +18,8 @@ final class AppModel: ObservableObject {
     @Published var retryAvailable = false
     @Published var shortcut: KeyboardShortcut
     @Published var capturingShortcut = false
+    @Published var shortcutDraft = "Press and release your shortcut…"
+    @Published var shortcutNotice: String?
     @Published var accessibilityGranted = AXIsProcessTrusted()
     @Published var installed: Set<String> = []
     @Published var downloading: String?
@@ -79,7 +81,7 @@ final class AppModel: ObservableObject {
     func beginShortcutCapture() { guard !busy else { return }; error = nil; capturingShortcut = true; onShortcutCapture?(true) }
     func cancelShortcutCapture() { guard capturingShortcut else { return }; capturingShortcut = false; onShortcutCapture?(false) }
     func setShortcut(_ candidate: KeyboardShortcut) {
-        guard candidate.isValid else { error = "Include Command, Option, or Control with a regular key."; return }
+        guard candidate.isValid else { error = "Press a key or combination of keys."; return }
         do {
             try onShortcutRequest?(candidate)
             shortcut = candidate; UserDefaults.standard.set(try JSONEncoder().encode(candidate), forKey: "shortcut")

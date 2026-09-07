@@ -6,7 +6,13 @@ import WhisperCore
 final class ShortcutController {
     private var reference: EventHotKeyRef?
     private var handler: EventHandlerRef?
+    private var eventTap: CFMachPort?
+    private var source: CFRunLoopSource?
+    private var configured: KeyboardShortcut?
+    private var matcher: ShortcutMatcher?
+    private var physicalModifiers: Set<UInt32> = []
     var onPress: (() -> Void)?
+    var onAvailability: ((String?) -> Void)?
     init() {
         var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         InstallEventHandler(GetApplicationEventTarget(), { _, _, context in
@@ -16,27 +22,118 @@ final class ShortcutController {
             return noErr
         }, 1, &spec, Unmanaged.passUnretained(self).toOpaque(), &handler)
     }
-    func suspend() { if let reference { UnregisterEventHotKey(reference) }; reference = nil }
+    func suspend() {
+        if let reference { UnregisterEventHotKey(reference) }; reference = nil
+        if let eventTap { CGEvent.tapEnable(tap: eventTap, enable: false); CFMachPortInvalidate(eventTap) }
+        if let source { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
+        eventTap = nil; source = nil; configured = nil; matcher = nil; physicalModifiers = []
+    }
     func install(_ shortcut: KeyboardShortcut) throws {
-        guard shortcut.isValid else { throw AppFailure.message("Choose a key with Command, Option, or Control.") }
-        // Do not lose the current registration when a new combination is already occupied.
-        var newReference: EventHotKeyRef?
-        let status = RegisterEventHotKey(shortcut.keyCode, shortcut.modifiers,
-            EventHotKeyID(signature: 0x50534841, id: 1), GetApplicationEventTarget(), 0, &newReference)
-        guard status == noErr else { throw AppFailure.message("That shortcut is already in use or unavailable. Choose another combination.") }
-        suspend(); reference = newReference
+        guard shortcut.isValid else { throw AppFailure.message("Press a key or combination of keys.") }
+        if configured == shortcut, reference != nil || eventTap != nil { return }
+        if !shortcut.needsEventTap {
+            var next: EventHotKeyRef?
+            let result = RegisterEventHotKey(shortcut.keyCode, shortcut.modifiers,
+                EventHotKeyID(signature: 0x50534841, id: 1), GetApplicationEventTarget(), 0, &next)
+            if result == noErr { suspend(); reference = next; configured = shortcut; onAvailability?(nil); return }
+        }
+        suspend(); configured = shortcut; matcher = ShortcutMatcher(shortcut: shortcut)
+        let mask = [CGEventType.keyDown, .keyUp, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown].reduce(CGEventMask(0)) { $0 | (1 << $1.rawValue) }
+        eventTap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
+            eventsOfInterest: mask, callback: { _, type, event, context in
+                guard let context else { return Unmanaged.passUnretained(event) }
+                let owner = Unmanaged<ShortcutController>.fromOpaque(context).takeUnretainedValue()
+                return MainActor.assumeIsolated { owner.handle(type, event) ? nil : Unmanaged.passUnretained(event) }
+            }, userInfo: Unmanaged.passUnretained(self).toOpaque())
+        guard let eventTap else {
+            onAvailability?("Shortcut saved. Enable Accessibility to use this key or chord globally.")
+            return
+        }
+        source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0)
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: eventTap, enable: true)
+        onAvailability?(nil)
+    }
+    private func handle(_ type: CGEventType, _ event: CGEvent) -> Bool {
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            if let configured { matcher = ShortcutMatcher(shortcut: configured) }; physicalModifiers = []
+            if let eventTap { CGEvent.tapEnable(tap: eventTap, enable: true) }; return false
+        }
+        if [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(type) { matcher?.usedWithMouse(); return false }
+        guard let native = NSEvent(cgEvent: event), let input = ShortcutKeys.input(native, held: physicalModifiers) else { return false }
+        if KeyboardShortcut.modifierKeys.contains(input.key), !input.pulse {
+            if input.down { physicalModifiers.insert(input.key) } else { physicalModifiers.remove(input.key) }
+        }
+        var outcome = matcher?.update(key: input.key, down: input.down, modifiers: input.modifiers, repeatKey: input.repeating)
+        if input.pulse { outcome = matcher?.update(key: input.key, down: false, modifiers: input.modifiers) }
+        if outcome?.trigger == true { Task { @MainActor [weak self] in self?.onPress?() } }
+        return outcome?.suppress == true
+    }
+    func refreshPermission() {
+        guard let configured, reference == nil, eventTap == nil, AXIsProcessTrusted() else { return }
+        try? install(configured)
     }
     func shutdown() { suspend(); if let handler { RemoveEventHandler(handler) }; handler = nil }
-    static func candidate(from event: NSEvent) -> KeyboardShortcut {
-        let flags = event.modifierFlags
-        var modifiers: UInt32 = 0
-        if flags.contains(.command) { modifiers |= UInt32(cmdKey) }
-        if flags.contains(.option) { modifiers |= UInt32(optionKey) }
-        if flags.contains(.control) { modifiers |= UInt32(controlKey) }
-        if flags.contains(.shift) { modifiers |= UInt32(shiftKey) }
-        let specials: [UInt16: String] = [49:"Space",36:"Return",48:"Tab",51:"Delete",117:"Forward Delete",123:"←",124:"→",125:"↓",126:"↑",122:"F1",120:"F2",99:"F3",118:"F4",96:"F5",97:"F6",98:"F7",100:"F8",101:"F9",109:"F10",103:"F11",111:"F12"]
-        let label = specials[event.keyCode] ?? event.characters(byApplyingModifiers: [])?.uppercased() ?? "Key \(event.keyCode)"
-        return KeyboardShortcut(keyCode: UInt32(event.keyCode), modifiers: modifiers, keyLabel: label)
+}
+
+@MainActor
+enum ShortcutKeys {
+    static func input(_ event: NSEvent, held: Set<UInt32> = []) -> (key: UInt32, down: Bool, modifiers: UInt32, repeating: Bool, pulse: Bool)? {
+        guard [.keyDown, .keyUp, .flagsChanged].contains(event.type) else { return nil }
+        let key = UInt32(event.keyCode)
+        var mods: UInt32 = 0
+        if event.modifierFlags.contains(.command) { mods |= 256 }
+        if event.modifierFlags.contains(.shift) { mods |= 512 }
+        if event.modifierFlags.contains(.option) { mods |= 2048 }
+        if event.modifierFlags.contains(.control) { mods |= 4096 }
+        // Use the event's own state: querying live keyboard state can miss a fast tap
+        // when both press and release have happened before this event is processed.
+        let implicitFunctionKeys: Set<UInt32> = [64,79,80,90,96,97,98,99,100,101,103,105,106,107,109,111,113,115,116,117,118,119,120,121,122,123,124,125,126]
+        if event.modifierFlags.contains(.function), held.contains(63) || !implicitFunctionKeys.contains(key) { mods |= KeyboardShortcut.fnModifier }
+        let pulse = event.type == .flagsChanged && key == 57
+        var down = event.type == .keyDown
+        if event.type == .flagsChanged {
+            let masks: [UInt32:UInt] = [54:UInt(NX_DEVICERCMDKEYMASK),55:UInt(NX_DEVICELCMDKEYMASK),56:UInt(NX_DEVICELSHIFTKEYMASK),60:UInt(NX_DEVICERSHIFTKEYMASK),58:UInt(NX_DEVICELALTKEYMASK),61:UInt(NX_DEVICERALTKEYMASK),59:UInt(NX_DEVICELCTLKEYMASK),62:UInt(NX_DEVICERCTLKEYMASK)]
+            let raw = event.modifierFlags.rawValue
+            let deviceMask = masks.values.reduce(UInt(0), |)
+            if pulse { down = true }
+            else if key == 63 { down = event.modifierFlags.contains(.function) }
+            else if let mask = masks[key], raw & deviceMask != 0 { down = raw & mask != 0 }
+            else {
+                // Synthetic/accessibility events can omit physical left/right bits.
+                let groups: [UInt32:NSEvent.ModifierFlags] = [54:.command,55:.command,56:.shift,60:.shift,58:.option,61:.option,59:.control,62:.control]
+                down = groups[key].map { event.modifierFlags.contains($0) && !held.contains(key) } ?? false
+            }
+        }
+        return (key, down, mods, event.type == .keyDown && event.isARepeat, pulse)
+    }
+    static func label(_ key: UInt32, event: NSEvent? = nil) -> String {
+        let special: [UInt32:String] = [49:"Space",36:"Return",48:"Tab",51:"Delete",53:"Escape",57:"Caps Lock",63:"Fn / Globe",54:"Right Command",55:"Left Command",56:"Left Shift",60:"Right Shift",58:"Left Option",61:"Right Option",59:"Left Control",62:"Right Control",117:"Forward Delete",123:"←",124:"→",125:"↓",126:"↑",115:"Home",119:"End",116:"Page Up",121:"Page Down",76:"Keypad Enter",122:"F1",120:"F2",99:"F3",118:"F4",96:"F5",97:"F6",98:"F7",100:"F8",101:"F9",109:"F10",103:"F11",111:"F12",105:"F13",107:"F14",113:"F15",106:"F16",64:"F17",79:"F18",80:"F19",90:"F20"]
+        return special[key] ?? event?.characters(byApplyingModifiers: [])?.uppercased() ?? "Key \(key)"
+    }
+}
+
+@MainActor
+final class ShortcutRecorder {
+    private var gesture = ShortcutGesture()
+    private var labels: [UInt32:String] = [:]
+    var preview = "Press and release your shortcut…"
+    func reset() { gesture = ShortcutGesture(); labels = [:]; preview = "Press and release your shortcut…" }
+    func observe(_ event: NSEvent) -> KeyboardShortcut? {
+        guard let input = ShortcutKeys.input(event, held: gesture.held), !input.repeating else { return nil }
+        labels[input.key] = ShortcutKeys.label(input.key, event: event)
+        var completed = gesture.update(key: input.key, down: input.down, modifiers: input.modifiers)
+        if input.pulse { completed = gesture.update(key: input.key, down: false, modifiers: input.modifiers) }
+        if let completed { return candidate(completed.keys, modifiers: completed.modifiers) }
+        if !gesture.peak.isEmpty { preview = candidate(gesture.peak, modifiers: gesture.peakModifiers).display }
+        return nil
+    }
+    private func candidate(_ keys: Set<UInt32>, modifiers: UInt32) -> KeyboardShortcut {
+        let regular = keys.subtracting(KeyboardShortcut.modifierKeys)
+        let chosen = (regular.isEmpty ? keys : regular).sorted()
+        return KeyboardShortcut(keyCode: chosen[0], modifiers: regular.isEmpty ? 0 : modifiers,
+            keyLabel: chosen.map { labels[$0] ?? ShortcutKeys.label($0) }.joined(separator: " + "),
+            additionalKeys: chosen.count > 1 ? Array(chosen.dropFirst()) : nil)
     }
 }
 

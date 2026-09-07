@@ -109,13 +109,74 @@ public struct KeyboardShortcut: Codable, Equatable {
     public let keyCode: UInt32
     public let modifiers: UInt32
     public let keyLabel: String
-    public init(keyCode: UInt32, modifiers: UInt32, keyLabel: String) {
-        self.keyCode = keyCode; self.modifiers = modifiers; self.keyLabel = keyLabel
+    public let additionalKeys: [UInt32]?
+    public init(keyCode: UInt32, modifiers: UInt32, keyLabel: String, additionalKeys: [UInt32]? = nil) {
+        self.keyCode = keyCode; self.modifiers = modifiers; self.keyLabel = keyLabel; self.additionalKeys = additionalKeys
     }
+    public static let fnModifier: UInt32 = 131072
+    public static let modifierKeys: Set<UInt32> = [54,55,56,57,58,59,60,61,62,63]
     public static let standard = KeyboardShortcut(keyCode: 49, modifiers: 2048, keyLabel: "Space")
-    public var isValid: Bool { modifiers & (256 | 2048 | 4096) != 0 && ![53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63].contains(keyCode) && keyCode < 128 }
+    public var keys: Set<UInt32> { Set([keyCode] + (additionalKeys ?? [])) }
+    public var modifierOnly: Bool { keys.isSubset(of: Self.modifierKeys) }
+    public var needsEventTap: Bool { modifierOnly || keys.count > 1 || modifiers & Self.fnModifier != 0 }
+    public var isValid: Bool { keys.allSatisfy { $0 < 128 } && !keyLabel.isEmpty && modifiers & ~(256 | 512 | 2048 | 4096 | Self.fnModifier) == 0 }
     public var display: String {
-        [(4096, "⌃"), (2048, "⌥"), (512, "⇧"), (256, "⌘")].filter { modifiers & UInt32($0.0) != 0 }.map { $0.1 }.joined() + keyLabel
+        [(4096, "⌃"), (2048, "⌥"), (512, "⇧"), (256, "⌘"), (Int(Self.fnModifier), "Fn+")].filter { modifiers & UInt32($0.0) != 0 }.map { $0.1 }.joined() + keyLabel
+    }
+}
+
+/// Tracks physical keys only; never receives or stores typed text.
+public struct ShortcutGesture {
+    public private(set) var held: Set<UInt32> = []
+    public private(set) var peak: Set<UInt32> = []
+    public private(set) var peakModifiers: UInt32 = 0
+    public init() {}
+    public mutating func update(key: UInt32, down: Bool, modifiers: UInt32) -> (keys: Set<UInt32>, modifiers: UInt32)? {
+        if down {
+            held.insert(key)
+            if held.count >= peak.count { peak = held; peakModifiers = modifiers }
+        } else { held.remove(key) }
+        if held.isEmpty, !peak.isEmpty {
+            let result = (peak, peakModifiers); peak = []; peakModifiers = 0; return result
+        }
+        return nil
+    }
+}
+
+public struct ShortcutMatcher {
+    public let shortcut: KeyboardShortcut
+    private var held: Set<UInt32> = []
+    private var latched = false
+    private var modifierArmed = false
+    private var modifierUsed = false
+    private var swallowed: Set<UInt32> = []
+    public init(shortcut: KeyboardShortcut) { self.shortcut = shortcut }
+    public mutating func usedWithMouse() { if !held.isEmpty { modifierUsed = true } }
+    public mutating func update(key: UInt32, down: Bool, modifiers: UInt32, repeatKey: Bool = false) -> (trigger: Bool, suppress: Bool) {
+        if repeatKey { return (false, swallowed.contains(key)) }
+        let before = held
+        if down { held.insert(key) } else { held.remove(key) }
+        if shortcut.modifierOnly {
+            if down, !held.isSubset(of: shortcut.keys) { modifierUsed = true }
+            if held == shortcut.keys { modifierArmed = true }
+            if held.isEmpty {
+                let fire = modifierArmed && !modifierUsed && !before.isEmpty
+                modifierArmed = false; modifierUsed = false
+                return (fire, false)
+            }
+            return (false, false)
+        }
+        let regular = held.subtracting(KeyboardShortcut.modifierKeys)
+        let matches = regular == shortcut.keys && modifiers == shortcut.modifiers
+        var suppress = swallowed.contains(key)
+        if !down { swallowed.remove(key) }
+        if down, matches, !latched {
+            latched = true
+            if !KeyboardShortcut.modifierKeys.contains(key) { swallowed.insert(key); suppress = true }
+            return (true, suppress)
+        }
+        if !matches { latched = false }
+        return (false, suppress)
     }
 }
 

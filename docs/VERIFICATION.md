@@ -1,4 +1,15 @@
-# Verification — 0.2.0 — September 6, 2026
+# Verification — 0.2.1 — September 6, 2026
+
+- All 15 tests pass: 11 core tests plus 4 tests using native AppKit keyboard events and the app's actual shortcut recorder.
+- Native capture tests cover Space, Escape, Shift+A, right Option, Fn/Globe, simultaneous A+B, physical modifier sides, and the implicit function flag on F-keys.
+- Matcher tests cover modifier-only taps versus typing/clicking, modifier chords, Caps Lock pulses, exact chord/modifier matching, repeats, matching key-up suppression, and migration from the original saved shortcut format.
+- Debug and release builds pass. The packaged app passes deep/strict ad-hoc signature verification and launches with the updated Shortcuts page.
+- Global event-tap operation with Accessibility permission and a physical keyboard still needs hands-on testing. Rebuilding this ad-hoc-signed app can require re-enabling its Accessibility permission. Pending bindings remain saved and display a permission notice; they are retried when the app becomes active after permission is granted.
+- No microphone recording was initiated during these checks. The original Option-Space setting remains selected.
+
+Native API references: [Apple CGEvent taps](https://developer.apple.com/documentation/coregraphics/cgevent), [Apple NSEvent](https://developer.apple.com/documentation/appkit/nsevent). Modifier handling uses event-time flags and native left/right key masks, avoiding a live-state sampling race on quick taps.
+
+## Previous 0.2.0 verification
 
 - Debug tests and release build pass with Xcode 26.6 / Swift 6.3.3, targeting macOS 14 on Apple Silicon.
 - Six unit tests pass: conservative annotation removal, endpoint policy, multipart formatting, shortcut validation/persistence format, overlay top-edge flipping, and placement on a display left of the primary display.

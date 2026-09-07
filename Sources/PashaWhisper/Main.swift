@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var overlay: NSPanel?
     private var statusItem: NSStatusItem?
     private let shortcutController = ShortcutController()
+    private let shortcutRecorder = ShortcutRecorder()
     private let anchor = FocusedTextAnchor()
     private var overlayTimer: Timer?
     private var previewEnd: DispatchWorkItem?
@@ -45,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             image.isTemplate = true; button.image = image; button.toolTip = "PashaWhisper · \(model.shortcut.display) to dictate"
             button.setAccessibilityLabel("PashaWhisper")
         }
+        shortcutController.onAvailability = { [weak self] in self?.model.shortcutNotice = $0 }
         shortcutController.onPress = { [weak self] in self?.model.toggleRecording() }
         do { try shortcutController.install(model.shortcut) } catch { model.error = error.localizedDescription }
         model.onShortcutRequest = { [weak self] shortcut in
@@ -55,7 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         model.onShortcutCapture = { [weak self] capturing in
             guard let self else { return }
-            if capturing { self.shortcutController.suspend() }
+            if capturing { self.shortcutController.suspend(); self.shortcutRecorder.reset(); self.model.shortcutDraft = self.shortcutRecorder.preview }
             else { do { try self.shortcutController.install(self.model.shortcut) } catch { self.model.error = error.localizedDescription } }
         }
         model.onWillRecord = { [weak self] in self?.anchor.capture() }
@@ -65,14 +67,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self.statusItem?.button?.contentTintColor = active ? .systemRed : nil
             if active { self.showOverlay() } else { self.hideOverlay() }
         }
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { [weak self] event in
             guard let self else { return event }
             if self.model.capturingShortcut {
-                if event.keyCode == 53 { self.model.cancelShortcutCapture() }
-                else if !event.isARepeat { self.model.setShortcut(ShortcutController.candidate(from: event)) }
+                if let candidate = self.shortcutRecorder.observe(event) { self.model.setShortcut(candidate) }
+                else { self.model.shortcutDraft = self.shortcutRecorder.preview }
                 return nil
             }
-            if event.keyCode == 53, self.model.busy { self.model.cancel(); return nil }
+            if event.type == .keyDown, event.keyCode == 53, !self.model.shortcut.keys.contains(53), self.model.busy { self.model.cancel(); return nil }
             return event
         }
         if let index = CommandLine.arguments.firstIndex(of: "--section"), CommandLine.arguments.count > index + 1 {
@@ -129,7 +131,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let work = DispatchWorkItem { [weak self] in self?.hideOverlay() }
         previewEnd = work; DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: work)
     }
-    func applicationDidBecomeActive(_ notification: Notification) { model.accessibilityGranted = AXIsProcessTrusted() }
+    func applicationDidBecomeActive(_ notification: Notification) { model.accessibilityGranted = AXIsProcessTrusted(); shortcutController.refreshPermission() }
     func windowWillClose(_ notification: Notification) { if model.capturingShortcut { model.cancelShortcutCapture() } }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         model.shutdown(); return .terminateNow

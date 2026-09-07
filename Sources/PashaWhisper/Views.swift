@@ -32,7 +32,7 @@ struct MainView: View {
                     Text(model.provider == "Offline" ? "LOCAL BY DEFAULT" : "CLOUD SELECTED").font(Theme.mono(10))
                 }
                 Text("Small app. Big ears.").font(.system(size: 12)).foregroundStyle(Theme.muted).padding(.top, 8)
-                Text("EARLY BUILD  /  0.2.0").font(Theme.mono(9)).foregroundStyle(Theme.muted).padding(.top, 20)
+                Text("EARLY BUILD  /  0.2.1").font(Theme.mono(9)).foregroundStyle(Theme.muted).padding(.top, 20)
             }.padding(22).frame(width: 230).background(Theme.paper)
             Rectangle().fill(Theme.ink).frame(width: 2)
             VStack(spacing: 0) {
@@ -281,8 +281,8 @@ struct ShortcutsView: View {
         PosterCard {
             VStack(alignment: .leading, spacing: 18) {
                 SmallLabel(text: "Start / stop dictation")
-                Text(model.capturingShortcut ? "Press your shortcut…" : model.shortcut.display).font(Theme.title(30))
-                Text("Use Command, Option, or Control with a key. Press once to record and again to finish. Escape cancels shortcut capture.")
+                Text(model.capturingShortcut ? model.shortcutDraft : model.shortcut.display).font(Theme.title(30))
+                Text("Press and release any key or combination: Space, Escape, F-keys, Shift, right Option, Fn / Globe, or several keys together. Use Cancel to leave the picker.")
                     .font(.system(size: 13)).foregroundStyle(Theme.muted).lineSpacing(4)
                 HStack {
                     if model.capturingShortcut {
@@ -292,6 +292,12 @@ struct ShortcutsView: View {
                         Button("RESET TO ⌥SPACE") { model.beginShortcutCapture(); model.setShortcut(.standard) }.buttonStyle(BlockButton())
                     }
                 }.disabled(model.busy)
+                Text("Single-key shortcuts take over that key. Modifier-only shortcuts trigger on release, so using the modifier to type does not start dictation. Multi-key chords can type their first keys before the chord completes.").font(.system(size: 12)).foregroundStyle(Theme.muted)
+                if let notice = model.shortcutNotice {
+                    Text(notice).font(.system(size: 12)).foregroundStyle(Theme.red)
+                    Button("ENABLE SHORTCUT ACCESS") { model.requestAccessibility() }.buttonStyle(BlockButton())
+                }
+                Text("macOS may reserve hardware or system shortcuts; keys must reach the app to be captured. Set the keyboard's top row to standard function keys when using F1–F12.").font(.system(size: 12)).foregroundStyle(Theme.muted)
             }
         }
         Rule()

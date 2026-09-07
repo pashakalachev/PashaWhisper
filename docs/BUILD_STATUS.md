@@ -1,11 +1,11 @@
-# Build status — 0.2.0
+# Build status — 0.2.1
 
 Native macOS development build; the full release requirements remain in [PRD.md](../PRD.md).
 
 Implemented:
 
 - Menu-bar utility and Soviet constructivist cat identity throughout.
-- Editable, persisted global toggle shortcut, with validation, conflict errors, Cancel, and Reset. Default Option-Space.
+- Editable global shortcut: single keys, modifier-only taps, Fn/Globe, Shift-only combinations, and multi-key chords. Captures on release, preserves older saved settings, reports permission needs, and offers Cancel and Reset. Default Option-Space.
 - Nonactivating floating cat overlay with 22 live microphone meter bars, elapsed time, and current shortcut. Uses Accessibility caret bounds, text-field bounds, or pointer fallback, clamped within the display. Preview requires no recording.
 - No History screen or persisted transcripts. Current result only; temporary audio with same-session retry after failure. Clear on success, silence, cancellation, or Quit; remove crash leftovers next launch and migrate away the old archive.
 - Real 16 kHz mono microphone recording, local whisper.cpp recognition, Silero speech detection, and conservative annotation filtering.
