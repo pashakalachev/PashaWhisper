@@ -1,4 +1,11 @@
-# Verification — 0.2.1 — September 6, 2026
+# Verification — 0.2.2 — September 6, 2026
+
+- Debug and packaged release builds succeed; ad-hoc signature verification passes.
+- Checked the actual SwiftUI sidebar in an isolated native preview, using temporary app data and no microphone. With Shortcuts selected, pointer mode has no lingering Dictation focus outline. Switching to Models retains only the selected-page background in pointer mode.
+- Posting a Tab event to the isolated preview moved keyboard focus to Models and displayed its full-row focus outline. Returning to pointer mode removed that outline. Mouse presses and app deactivation leave keyboard navigation mode; no global accessibility setting is changed.
+- Expanded each sidebar label's hit area to the full rectangular row.
+
+## Previous 0.2.1 verification
 
 - All 15 tests pass: 11 core tests plus 4 tests using native AppKit keyboard events and the app's actual shortcut recorder.
 - Native capture tests cover Space, Escape, Shift+A, right Option, Fn/Globe, simultaneous A+B, physical modifier sides, and the implicit function flag on F-keys.

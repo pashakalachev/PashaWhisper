@@ -23,7 +23,10 @@ struct MainView: View {
                         }.padding(.horizontal, 12).padding(.vertical, 13)
                             .foregroundStyle(model.section == item.0 ? Theme.paper : Theme.ink)
                             .background(model.section == item.0 ? Theme.ink : .clear)
-                    }.buttonStyle(.plain).padding(.bottom, 5)
+                            .contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                        .focusEffectDisabled(!model.keyboardNavigation)
+                        .padding(.bottom, 5)
                 }
                 Spacer()
                 Rule().padding(.bottom, 15)
@@ -32,7 +35,7 @@ struct MainView: View {
                     Text(model.provider == "Offline" ? "LOCAL BY DEFAULT" : "CLOUD SELECTED").font(Theme.mono(10))
                 }
                 Text("Small app. Big ears.").font(.system(size: 12)).foregroundStyle(Theme.muted).padding(.top, 8)
-                Text("EARLY BUILD  /  0.2.1").font(Theme.mono(9)).foregroundStyle(Theme.muted).padding(.top, 20)
+                Text("EARLY BUILD  /  0.2.2").font(Theme.mono(9)).foregroundStyle(Theme.muted).padding(.top, 20)
             }.padding(22).frame(width: 230).background(Theme.paper)
             Rectangle().fill(Theme.ink).frame(width: 2)
             VStack(spacing: 0) {

@@ -1,10 +1,10 @@
-# Build status — 0.2.1
+# Build status — 0.2.2
 
 Native macOS development build; the full release requirements remain in [PRD.md](../PRD.md).
 
 Implemented:
 
-- Menu-bar utility and Soviet constructivist cat identity throughout.
+- Menu-bar utility and Soviet constructivist cat identity throughout. Sidebar focus rings appear during Tab navigation and clear on mouse use or app deactivation; the full navigation row is clickable.
 - Editable global shortcut: single keys, modifier-only taps, Fn/Globe, Shift-only combinations, and multi-key chords. Captures on release, preserves older saved settings, reports permission needs, and offers Cancel and Reset. Default Option-Space.
 - Nonactivating floating cat overlay with 22 live microphone meter bars, elapsed time, and current shortcut. Uses Accessibility caret bounds, text-field bounds, or pointer fallback, clamped within the display. Preview requires no recording.
 - No History screen or persisted transcripts. Current result only; temporary audio with same-session retry after failure. Clear on success, silence, cancellation, or Quit; remove crash leftovers next launch and migrate away the old archive.

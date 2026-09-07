@@ -6,6 +6,7 @@ import WhisperCore
 @MainActor
 final class AppModel: ObservableObject {
     @Published var section = "Dictation"
+    @Published var keyboardNavigation = false
     @Published var status = "Ready when you are."
     @Published var detail = "Your words. Your machine."
     @Published var recording = false

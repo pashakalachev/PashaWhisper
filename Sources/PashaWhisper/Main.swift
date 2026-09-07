@@ -67,8 +67,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self.statusItem?.button?.contentTintColor = active ? .systemRed : nil
             if active { self.showOverlay() } else { self.hideOverlay() }
         }
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { [weak self] event in
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
             guard let self else { return event }
+            if [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(event.type) {
+                self.model.keyboardNavigation = false
+                return event
+            }
+            if event.type == .keyDown, event.keyCode == 48, !self.model.capturingShortcut {
+                self.model.keyboardNavigation = true
+            }
             if self.model.capturingShortcut {
                 if let candidate = self.shortcutRecorder.observe(event) { self.model.setShortcut(candidate) }
                 else { self.model.shortcutDraft = self.shortcutRecorder.preview }
@@ -131,6 +138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let work = DispatchWorkItem { [weak self] in self?.hideOverlay() }
         previewEnd = work; DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: work)
     }
+    func applicationDidResignActive(_ notification: Notification) { model.keyboardNavigation = false }
     func applicationDidBecomeActive(_ notification: Notification) { model.accessibilityGranted = AXIsProcessTrusted(); shortcutController.refreshPermission() }
     func windowWillClose(_ notification: Notification) { if model.capturingShortcut { model.cancelShortcutCapture() } }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
