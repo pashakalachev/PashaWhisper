@@ -15,7 +15,7 @@ final class ReadinessTests: XCTestCase {
             if let previousProvider { UserDefaults.standard.set(previousProvider, forKey: "provider") } else { UserDefaults.standard.removeObject(forKey: "provider") }
             try? FileManager.default.removeItem(at: root)
         }
-        let model = AppModel(); model.provider = "Offline"; model.selectedModel = "missing-model"
+        let model = AppModel(permissionReader: { PermissionState(accessibility: true, eventPosting: true, microphone: .authorized) }); model.provider = "Offline"; model.selectedModel = "missing-model"
         var attention = false, microphoneStarted = false
         model.onNeedsAttention = { attention = true }
         model.onRecordingChange = { microphoneStarted = $0 }
@@ -26,5 +26,14 @@ final class ReadinessTests: XCTestCase {
         XCTAssertEqual(model.overlayTitle, "SETUP NEEDED")
         XCTAssertTrue(model.error?.contains("installed model") == true)
         XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("Transient").path).isEmpty)
+        var access = PermissionState(accessibility: true, eventPosting: false, microphone: .authorized)
+        let setup = AppModel(permissionReader: { access })
+        setup.onWillRecord = { XCTFail("Recording began before automatic paste access was ready") }
+        setup.toggleRecording()
+        XCTAssertFalse(setup.busy); XCTAssertEqual(setup.section, "Setup")
+        XCTAssertFalse(setup.autoPasteReady)
+        access = PermissionState(accessibility: true, eventPosting: true, microphone: .authorized)
+        setup.refreshPermissions()
+        XCTAssertTrue(setup.autoPasteReady); XCTAssertTrue(setup.permissions.ready)
     }
 }

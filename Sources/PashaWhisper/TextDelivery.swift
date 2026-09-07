@@ -17,8 +17,8 @@ final class TextDelivery {
 
     func capture() {
         destination = nil
-        guard AXIsProcessTrusted() else {
-            unavailable = "Enable Accessibility in Privacy to paste automatically. Your transcript is ready to copy."; return
+        guard PermissionState.current().autoPasteReady else {
+            unavailable = "Complete automatic paste access in Setup. Your transcript is ready to copy."; return
         }
         guard let front = NSWorkspace.shared.frontmostApplication,
               front.processIdentifier != ProcessInfo.processInfo.processIdentifier else {
@@ -35,7 +35,7 @@ final class TextDelivery {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return "No text to insert." }
         guard lastAttempt != session else { return "Delivery was already attempted. Check the field before pasting again." }
         lastAttempt = session
-        guard AXIsProcessTrusted() else { return "Enable Accessibility in Privacy to paste automatically. Your transcript is ready to copy." }
+        guard PermissionState.current().autoPasteReady else { return "Complete automatic paste access in Setup. Your transcript is ready to copy." }
         guard let destination else { return unavailable }
         guard contextMatches(destination) else { return "The destination or selection changed. Your transcript is ready to copy." }
         // Build both events before changing the clipboard. Never post Paste unless

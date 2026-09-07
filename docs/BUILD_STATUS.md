@@ -1,8 +1,11 @@
-# Build status — 0.2.4
+# Build status — 0.2.5
 
 Native macOS development build; the full release requirements remain in [PRD.md](../PRD.md).
 
 Implemented:
+
+- Permission-first Setup: default automatic paste, verified field access and event posting, then microphone. Live permission refresh and guidance for a stale enabled entry; dictation waits until permission checks pass.
+- Certificate-signed builds using an available Developer ID or Apple Development identity. Ad-hoc signing requires explicit opt-in.
 
 - Menu-bar utility and Soviet constructivist cat identity throughout. Sidebar focus rings appear during Tab navigation and clear on mouse use or app deactivation; the full navigation row is clickable.
 - Generic no-recording shortcut test; native hotkey capture plus permission-aware event capture and local key events. No device-specific preset. Native shortcut handlers validate their event IDs and suppress repeat presses until release.
@@ -22,6 +25,6 @@ Remaining work:
 - Hold-to-talk, global Escape, microphone selector, input-disconnection handling, streaming chunks, warm model reuse, download resume/free-space preflight.
 - Parakeet and Qwen runtime adapters, model import, API connection testing, provider cost estimates, and uploads above 25 MB.
 - Broad Accessibility field coverage, live microphone/waveform testing, long recordings, quiet-speech/non-speech corpora, model quality and memory/latency benchmarks.
-- Developer ID signing/notarization, minimum-macOS validation, and Intel support. This build is ad-hoc signed.
+- Developer ID signing/notarization, minimum-macOS validation, and Intel support. This local build uses Apple Development signing.
 
 Cloud VAD checks for speech before upload; it does not strip every silent interval. No guarantee is made against background voices or singing.

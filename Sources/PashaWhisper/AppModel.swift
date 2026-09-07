@@ -27,7 +27,13 @@ final class AppModel: ObservableObject {
     @Published var shortcutCaptureHint = ""
     @Published var testingShortcut = false
     @Published var shortcutTestCount = 0
-    @Published var accessibilityGranted = AXIsProcessTrusted()
+    @Published var permissions = PermissionState.current()
+    @Published var setupCompleted = UserDefaults.standard.bool(forKey: "setupCompleted")
+    @Published var permissionRequested = false
+    var accessibilityGranted: Bool { permissions.accessibility }
+    var autoPasteReady: Bool { permissions.autoPasteReady }
+    var needsSetup: Bool { !setupCompleted || !permissions.ready }
+    var appLocation: String { Bundle.main.bundleURL.path }
     @Published var installed: Set<String> = []
     @Published var downloading: String?
     @Published var downloadProgress = 0.0
@@ -39,6 +45,7 @@ final class AppModel: ObservableObject {
     @Published var suppression: Suppression { didSet { UserDefaults.standard.set(suppression.rawValue, forKey: "suppression") } }
     @Published var endpoint: String { didSet { UserDefaults.standard.set(endpoint, forKey: "endpoint") } }
     @Published var apiModel: String { didSet { UserDefaults.standard.set(apiModel, forKey: "apiModel") } }
+    private let permissionReader: () -> PermissionState
     private let recorder = AudioRecorder()
     private var timer: Timer?
     private var sessionID: UUID?
@@ -77,7 +84,8 @@ final class AppModel: ObservableObject {
         showOverlay(title, message, dismissAfter: 8); onNeedsAttention?()
     }
 
-    init() {
+    init(permissionReader: @escaping () -> PermissionState = PermissionState.current) {
+        self.permissionReader = permissionReader
         let defaults = UserDefaults.standard
         selectedModel = defaults.string(forKey: "model") ?? "tiny.en-q5_1"
         provider = defaults.string(forKey: "provider") ?? "Offline"
@@ -87,6 +95,7 @@ final class AppModel: ObservableObject {
         apiModel = defaults.string(forKey: "apiModel") ?? "whisper-1"
         let saved = defaults.data(forKey: "shortcut").flatMap { try? JSONDecoder().decode(KeyboardShortcut.self, from: $0) }
         shortcut = saved?.isValid == true ? saved! : .standard
+        permissions = permissionReader()
         do {
             try AppPaths.prepare()
             try AppPaths.removeLegacyHistory()
@@ -115,10 +124,36 @@ final class AppModel: ObservableObject {
             capturingShortcut = false; error = nil
         } catch { self.error = error.localizedDescription }
     }
-    func requestAccessibility() {
-        _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
-        accessibilityGranted = AXIsProcessTrusted()
+    func refreshPermissions() {
+        let current = permissionReader()
+        if permissions != current { permissions = current }
     }
+    func requestAccessibility() {
+        refreshPermissions()
+        guard !autoPasteReady else { return }
+        permissionRequested = true
+        if !permissions.accessibility {
+            _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
+        } else if !permissions.eventPosting { _ = CGRequestPostEventAccess() }
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+        refreshPermissions()
+    }
+    func requestMicrophone() {
+        refreshPermissions()
+        guard autoPasteReady else { return }
+        if permissions.microphone == .notDetermined {
+            Task { _ = await AVCaptureDevice.requestAccess(for: .audio); refreshPermissions() }
+        } else if permissions.microphone != .authorized {
+            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
+        }
+    }
+    func finishSetup() {
+        refreshPermissions()
+        guard permissions.ready else { return }
+        setupCompleted = true; UserDefaults.standard.set(true, forKey: "setupCompleted")
+        section = "Dictation"; error = nil
+    }
+    func revealRunningApp() { NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL]) }
     func receivedShortcut() {
         if testingShortcut { shortcutTestCount += 1; return }
         toggleRecording()
@@ -132,6 +167,11 @@ final class AppModel: ObservableObject {
         guard !capturingShortcut else { return }
         if recording { stopAndTranscribe() }
         else if !busy {
+            refreshPermissions()
+            guard permissions.ready else {
+                needsAttention(autoPasteReady ? "Allow microphone access in Setup before dictating." : "Allow automatic paste in Setup before dictating.", section: "Setup")
+                return
+            }
             onWillRecord?()
             processingSeconds = nil
             let id = UUID(); sessionID = id; preparing = true

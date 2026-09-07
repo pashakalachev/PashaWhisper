@@ -1,6 +1,6 @@
 # PashaWhisper — product requirements
 
-Draft v4 · September 6, 2026 · Product requirements; implementation status tracked in docs/BUILD_STATUS.md
+Draft v5 · September 6, 2026 · Product requirements; implementation status tracked in docs/BUILD_STATUS.md
 
 **Product promise:** Press a shortcut, speak, and get your words into the intended text field. Work offline with downloadable models or use your own transcription API key. If delivery fails, the current result remains available until cleared, replaced by another recording, or the app quits. No transcript history is stored.
 
@@ -19,7 +19,7 @@ Open-source speech models are still AI. Whisper's own documentation describes ha
 ## 2. Core experience
 
 1. Install a signed, notarized app and open it from the menu bar.
-2. Grant microphone access. Grant Accessibility access for text-field positioning and automatic insertion; transcription and manual copying remain usable without it.
+2. On first launch, show Setup with automatic paste enabled as the default behavior. Request Accessibility first, verify both field access and permission to post paste commands, then request microphone access. Do not begin dictation until the permissions are ready; existing transcripts remain available for manual Copy. Refresh live when Settings changes, and explain how to replace an enabled entry belonging to an older app identity.
 3. Choose offline transcription and download a recommended model, or select an API provider and enter a key.
 4. Pick a global shortcut. Support both hold-to-record and press-to-start/press-to-stop.
 5. Focus a text field, activate the shortcut, and speak. A small nonactivating overlay follows the caret or active text field, with the cat logo, live microphone waveform, elapsed time, and current shortcut. Without Accessibility permission or a supported field, anchor near the pointer. Clamp to the visible display and flip below when there is no room above.
@@ -129,6 +129,8 @@ Separate recording, transcription, session state, and insertion. Use an explicit
 Latency delivery plan: first make press → record → press → transcribe → paste reliable and expose processing time. Keep the overlay visible until delivery or an actionable result. Local VAD should run once per request. Next, reuse a loaded model and process audio while recording using speech-boundary chunks plus overlap reconciliation; only deliver the finalized text once after Stop. Do not concatenate unstable partial results or promise zero latency. Benchmark repeated words, corrections, pauses, and five-minute sessions before enabling incremental recognition by default. API streaming requires a provider-specific adapter rather than pretending the current file-upload endpoint streams.
 
 Keep inference off the main UI thread. Begin with a single inference worker and one active recording; a new recording replaces the current result, so recordings must not queue invisibly. Process longer audio in overlapping chunks bounded by each engine's limits, preferably near speech boundaries. Reconcile overlap without deleting intentional repeated words.
+
+Sign updates with a stable certificate identity. Ad-hoc signing must be an explicit development-only choice because a changed binary has a changed identity; the UI must never treat a previous visible permission checkbox as proof this running process is authorized. Developer ID signing/notarization remains required for public distribution.
 
 Ship a native application with prebuilt dependencies; users should not need Python, Homebrew, a terminal, or a running local server. Use signed direct distribution initially. No analytics by default; diagnostic exports omit recordings, transcript text, and API keys unless the user explicitly includes content.
 

@@ -10,10 +10,12 @@ An early working build of the [PRD](PRD.md). See [build status](docs/BUILD_STATU
 
 This repository contains the source; build the app using the **Develop** instructions below. Then open `dist/PashaWhisper.app`. A small English Whisper model is included in the generated app bundle. No Python, Homebrew, or account is needed to run the packaged app.
 
-1. Focus a text field in another app, then press **Option-Space** (customizable in **Shortcuts**) or **Start Dictation**.
-2. Allow microphone access when macOS asks.
+1. Open the app. **Setup** is the first screen: allow automatic paste in macOS Accessibility, then allow the microphone. Click **Finish Setup** when both permissions are verified.
+2. Focus a text field in another app and press **Option-Space** (customizable in **Shortcuts**).
 3. Speak, then press your shortcut again.
-4. Wait for **Transcribing**, then the completed text is pasted into the original field. Enable Accessibility for automatic paste; **Copy Transcript** remains available if delivery is blocked.
+4. Wait for **Transcribing**, then the completed text is pasted into the original field. **Copy Transcript** remains available if delivery is blocked.
+
+Automatic paste is the default workflow, not an opt-in feature. The app checks field access and permission to post paste commands separately and refreshes the setup screen while Settings is open. If macOS shows PashaWhisper enabled but Setup still waits, remove the old entry with **−**, then use **+** to add the exact app shown by **Show This App in Finder**, enable it, and return to Setup. Quit/reopen that copy if needed. This one-time migration may be needed when moving from an old ad-hoc build to certificate signing.
 
 Shortcuts accept single keys (including Space, Escape, and F-keys), modifier-only taps, Fn/Globe, and multi-key chords. Press and release the combination to save it. Some bindings require Accessibility; use **Enable Shortcut Access** when shown. Modifier-only shortcuts trigger on release, and using a modifier to type or click does not trigger dictation. macOS may reserve some hardware/system combinations.
 
@@ -42,7 +44,7 @@ open dist/PashaWhisper.app
 
 Set `CMAKE_BIN` if CMake is installed outside PATH. Runtime sources are pinned to whisper.cpp v1.8.6, statically linked with Metal shaders embedded. No machine-specific Homebrew library paths are packaged. Downloads and native build products are excluded from Git; the bootstrap script reproduces them.
 
-The local app is ad-hoc signed. Developer ID signing and notarization are required before distributing a production release.
+The build script uses a stable signing certificate: it prefers a unique Developer ID Application identity, otherwise a unique Apple Development identity. Set `CODE_SIGN_IDENTITY` explicitly when there are multiple certificates. The current local build uses Apple Development signing. Developer ID signing and notarization are still required for a public production release. Ad-hoc signing is available only by explicitly setting `CODE_SIGN_IDENTITY=-` for disposable builds; changing those binaries can invalidate existing macOS permissions.
 
 ## Structure
 

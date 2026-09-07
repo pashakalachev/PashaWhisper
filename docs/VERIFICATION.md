@@ -1,4 +1,16 @@
-# Verification — 0.2.4 — September 6, 2026
+# Verification — 0.2.5 — September 6, 2026
+
+- All 26 tests pass. Permission tests require both Accessibility field access and event-posting access; microphone access is required separately. A model-level test confirms dictation is blocked at Setup when paste access is missing and that refreshing permissions reflects a later grant.
+- The previously packaged 0.2.4 app used an ad-hoc designated requirement tied only to its code hash. The running app displayed a missing-Accessibility result even though the user reported its Settings entry enabled. A stale code identity is the likely explanation; no TCC database was read or changed.
+- The 0.2.5 app and helpers are signed with the Mac's existing Apple Development certificate. Deep/strict signature verification passes. A disposable copy with changed bundle content had a different code hash but the same certificate-backed designated requirement; the copy was removed afterward. No permissive custom signing requirement was introduced.
+- First-run Setup, waiting/ready states, first-step automatic paste permission, disabled microphone step until paste access, and Finish Setup were inspected in an isolated SwiftUI preview. Permission status refreshes every second and on app activation; already-authorized access does not reopen Settings.
+- The build script prefers one Developer ID Application identity, otherwise one Apple Development identity. Multiple candidates require explicit selection; no certificate fails clearly. Ad-hoc builds require explicit CODE_SIGN_IDENTITY=-. Public distribution still requires Developer ID signing and notarization.
+- The running 0.2.4 app was left open to preserve its current in-memory result. Removing/re-adding the old Accessibility entry and approving the new signed copy remains a user action. End-to-end paste under the new grant has not yet been confirmed.
+
+Reference: [Apple code signing identity and update matching](https://developer.apple.com/library/archive/technotes/tn2206/_index.html), [Apple Accessibility permissions](https://support.apple.com/guide/mac-help/allow-accessibility-apps-to-access-your-mac-mh43185/mac).
+
+## Previous 0.2.4 verification
+
 
 - All 24 automated tests pass. New cases cover native shortcut conversion for multiple keys/modifiers, empty text, failed clipboard writes, clipboard races, focus changes, once-only Paste dispatch, and missing-model preflight without microphone capture.
 - An isolated native app exercised Carbon hotkey notifications for F18, F17, Option-Space, and Shift-Command-A; the picker captured each and the normal dictation callback remained at zero. A separate OS keyboard-event test captured F18, F17, and Option-Space. F-key test events need macOS's function flag; an initial incorrectly flagged injection did not trigger the hotkey. The OS-routed Shift-Command-A case timed out and is not claimed verified. No confirmation was received from the user's physical pedal during the separate bounded hands-on check.

@@ -8,6 +8,23 @@ for required in vendor/runtime/whisper-cli vendor/runtime/whisper-vad-speech-seg
 done
 swift build -c release --disable-sandbox
 bin_dir="$(swift build -c release --show-bin-path --disable-sandbox)"
+# A stable certificate identity keeps macOS permissions associated with updates.
+# Ad-hoc signing must be explicitly requested for disposable development builds.
+signing_identity="${CODE_SIGN_IDENTITY:-}"
+if [[ -z "$signing_identity" ]]; then
+  signing_identity=$(security find-identity -v -p codesigning | python3 -c '
+import re, sys
+entries = re.findall(r"([0-9A-F]{40}) \"([^\"]+)\"", sys.stdin.read())
+for prefix in ("Developer ID Application:", "Apple Development:"):
+    matches = [key for key, name in entries if name.startswith(prefix)]
+    if len(matches) == 1:
+        print(matches[0]); break
+    if len(matches) > 1:
+        sys.exit("Multiple signing identities. Set CODE_SIGN_IDENTITY explicitly.")
+else:
+    sys.exit("No signing certificate found. Set CODE_SIGN_IDENTITY, or explicitly use CODE_SIGN_IDENTITY=- for a disposable ad-hoc build.")
+')
+fi
 app="$PWD/dist/PashaWhisper.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Helpers"
 cp "$bin_dir/PashaWhisper" "$app/Contents/MacOS/"
@@ -34,8 +51,8 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 <key>CFBundleDisplayName</key><string>PashaWhisper</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.2.4</string>
-<key>CFBundleVersion</key><string>6</string>
+<key>CFBundleShortVersionString</key><string>0.2.5</string>
+<key>CFBundleVersion</key><string>7</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>LSUIElement</key><true/>
 <key>NSMicrophoneUsageDescription</key><string>PashaWhisper records your voice only when you start dictation.</string>
@@ -43,8 +60,8 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 </dict></plist>
 PLIST
-codesign --force --sign - "$app/Contents/Helpers/whisper-cli"
-codesign --force --sign - "$app/Contents/Helpers/whisper-vad-speech-segments"
-codesign --force --sign - "$app"
+codesign --force --sign "$signing_identity" "$app/Contents/Helpers/whisper-cli"
+codesign --force --sign "$signing_identity" "$app/Contents/Helpers/whisper-vad-speech-segments"
+codesign --force --sign "$signing_identity" "$app"
 codesign --verify --deep --strict "$app"
 echo "Built: $app"

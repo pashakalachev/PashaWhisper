@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var previewEnd: DispatchWorkItem?
     private var recordMenuItem: NSMenuItem?
     private var localMonitor: Any?
+    private var permissionTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -120,6 +121,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if ["Dictation", "Models", "Providers", "Shortcuts", "Privacy"].contains(section) { model.section = section }
         }
         if CommandLine.arguments.contains("--test-shortcut") { model.section = "Shortcuts"; model.beginShortcutTest() }
+        model.refreshPermissions()
+        if model.needsSetup { model.section = "Setup" }
+        permissionTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.model.refreshPermissions(); self.shortcutController.refreshPermission()
+            }
+        }
         showWindow()
     }
     private func captureShortcut(_ event: NSEvent) {
@@ -176,12 +185,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         previewEnd = work; DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: work)
     }
     func applicationDidResignActive(_ notification: Notification) { model.keyboardNavigation = false; model.cancelShortcutCapture() }
-    func applicationDidBecomeActive(_ notification: Notification) { model.accessibilityGranted = AXIsProcessTrusted(); shortcutController.refreshPermission() }
+    func applicationDidBecomeActive(_ notification: Notification) { model.refreshPermissions(); shortcutController.refreshPermission() }
     func windowWillClose(_ notification: Notification) { model.testingShortcut = false; if model.capturingShortcut { model.cancelShortcutCapture() } }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         model.shutdown(); return .terminateNow
     }
     func applicationWillTerminate(_ notification: Notification) {
+        permissionTimer?.invalidate(); permissionTimer = nil
         model.shutdown(); shortcutCaptureMonitor.stop(); shortcutController.shutdown(); hideOverlay()
         if let localMonitor { NSEvent.removeMonitor(localMonitor) }
     }
