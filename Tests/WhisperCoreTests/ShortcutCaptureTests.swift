@@ -45,7 +45,7 @@ final class ShortcutCaptureTests: XCTestCase {
             let recorder = ShortcutRecorder()
             XCTAssertNil(recorder.observe(event(.keyDown, key: 79, flags: flags, text: "\u{F715}")))
             let saved = recorder.observe(event(.keyUp, key: 79, flags: flags, text: "\u{F715}"))
-            XCTAssertEqual(saved, .f18Pedal)
+            XCTAssertEqual(saved, KeyboardShortcut(keyCode: 79, modifiers: 0, keyLabel: "F18"))
             XCTAssertFalse(saved!.needsEventTap)
             var matcher = ShortcutMatcher(shortcut: saved!)
             let down = ShortcutKeys.input(event(.keyDown, key: 79, flags: flags))!
@@ -75,4 +75,13 @@ final class ShortcutCaptureTests: XCTestCase {
         XCTAssertEqual(result?.display, "A + B")
         XCTAssertTrue(result?.needsEventTap == true)
     }
+    @MainActor func testNativeHotkeyCaptureSupportsDifferentKeysAndModifiers() {
+        for (key, mods): (UInt32, UInt32) in [(79, 0), (64, 0), (49, 2048), (0, 256 | 512), (11, 4096)] {
+            let recorder = ShortcutRecorder()
+            XCTAssertNil(recorder.observe(ShortcutCaptureMonitor.keyEvent(key: key, modifiers: mods, down: true)!))
+            let result = recorder.observe(ShortcutCaptureMonitor.keyEvent(key: key, modifiers: mods, down: false)!)
+            XCTAssertEqual(result?.keyCode, key); XCTAssertEqual(result?.modifiers, mods)
+        }
+    }
+
 }

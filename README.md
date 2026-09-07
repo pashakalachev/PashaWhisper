@@ -10,22 +10,22 @@ An early working build of the [PRD](PRD.md). See [build status](docs/BUILD_STATU
 
 This repository contains the source; build the app using the **Develop** instructions below. Then open `dist/PashaWhisper.app`. A small English Whisper model is included in the generated app bundle. No Python, Homebrew, or account is needed to run the packaged app.
 
-1. Press **Option-Space** (customizable in **Shortcuts**) or **Start Dictation**.
+1. Focus a text field in another app, then press **Option-Space** (customizable in **Shortcuts**) or **Start Dictation**.
 2. Allow microphone access when macOS asks.
 3. Speak, then press your shortcut again.
-4. Click **Copy Transcript** and paste into your destination app.
+4. Wait for **Transcribing**, then the completed text is pasted into the original field. Enable Accessibility for automatic paste; **Copy Transcript** remains available if delivery is blocked.
 
 Shortcuts accept single keys (including Space, Escape, and F-keys), modifier-only taps, Fn/Globe, and multi-key chords. Press and release the combination to save it. Some bindings require Accessibility; use **Enable Shortcut Access** when shown. Modifier-only shortcuts trigger on release, and using a modifier to type or click does not trigger dictation. macOS may reserve some hardware/system combinations.
 
-For an F18 pedal, choose **Shortcuts → Use F18 Pedal**, then **Test Shortcut**. The test counts shortcut presses without recording audio; click Finish Test to resume dictation. Direct assignment avoids the need to capture an event already intercepted by another app. The picker also uses an earlier system event listener when Accessibility is available and stops listening when the app loses focus.
+Use **Shortcuts → Change Shortcut** to record your own key or combination, then **Test Shortcut** to check it without recording audio. The picker accepts both normal keyboard events and native macOS hotkey notifications, including input from remappers. Temporary registrations stop on cancellation, completion, window close, or deactivation. Held keys trigger once until released.
 
-Closing the window leaves the app in the menu bar. Use the cat menu to reopen it or quit. The first build deliberately uses manual copying; automatic insertion is not yet implemented.
+Closing the window leaves the app in the menu bar. Use the cat menu to reopen it or quit. Automatic paste checks that the original application, field, selection, and readable field value are unchanged. It writes and verifies the new transcript on the clipboard before sending Paste once; uncertain delivery stays available for manual recovery.
 
 Download a larger or multilingual model from Models. Choose OpenAI or Custom API under Providers to use your own key. Keys are stored in macOS Keychain. Cloud recording is always an explicit choice. API integration has not been tested against a paid live account.
 
-No transcript history is stored. Only the current result stays in memory until cleared, replaced by another recording, or Quit. Temporary audio is deleted after success, silence, cancellation, and Quit. A failed recording can be retried during the session; crash leftovers are deleted next launch. Upgrading removes the old history and recording archive. Copied text remains on the clipboard.
+No transcript history is stored. Only the current result stays in memory until cleared, replaced by another recording, or Quit. Temporary audio is deleted after success, silence, cancellation, and Quit. A failed recording can be retried during the session; crash leftovers are deleted next launch. Upgrading removes the old history and recording archive. Copied or automatically pasted text remains on the clipboard.
 
-The floating cat indicator displays a live microphone waveform. Enable Accessibility under **Shortcuts → Enable Field Positioning** to follow the active cursor or text field. It falls back to the pointer for unavailable fields or permission. Preview the indicator without recording from the same page.
+The floating cat indicator displays preparation, recording with a live microphone waveform, transcription, paste, and actionable failure states. Missing models, API keys, or bundled engines are reported before microphone capture begins. Enable Accessibility under **Shortcuts → Enable Field Positioning** to follow the active cursor or text field. It falls back to the pointer for unavailable fields or permission. Preview the indicator without recording from the same page.
 
 The catalog names 13 exact Whisper variants, including Large v3 and Large v3 Turbo in explicit precisions. See the [model inventory](docs/MODELS.md) for supported artifacts and additional engine plans.
 

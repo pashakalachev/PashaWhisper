@@ -1,4 +1,17 @@
-# Verification — 0.2.3 — September 6, 2026
+# Verification — 0.2.4 — September 6, 2026
+
+- All 24 automated tests pass. New cases cover native shortcut conversion for multiple keys/modifiers, empty text, failed clipboard writes, clipboard races, focus changes, once-only Paste dispatch, and missing-model preflight without microphone capture.
+- An isolated native app exercised Carbon hotkey notifications for F18, F17, Option-Space, and Shift-Command-A; the picker captured each and the normal dictation callback remained at zero. A separate OS keyboard-event test captured F18, F17, and Option-Space. F-key test events need macOS's function flag; an initial incorrectly flagged injection did not trigger the hotkey. The OS-routed Shift-Command-A case timed out and is not claimed verified. No confirmation was received from the user's physical pedal during the separate bounded hands-on check.
+- Automatic paste passed an isolated two-process AppKit test: it replaced a selected substring once and preserved surrounding text. The test restored the previous clipboard only when its own test text still owned it. Direct-to-process event posting failed the initial fixture; posting through the window server passed. Production delivery checks focus/selection/readable field value and verifies the exact transcript on the clipboard immediately before dispatch. UI reports “Paste sent,” not a universal verified-insertion claim.
+- The user's existing app had a successful four-second Tiny.en transcript in its Current Result view. Missing automatic delivery, rather than a missing model, explained that observed attempt. The running app was left open to preserve its in-memory result.
+- Packaged engine on Apple M1 Pro, macOS 26.5.2: public 11-second upstream JFK sample returned expected text in 1.52 seconds wall time; five seconds of synthetic silence returned no text in 0.62 seconds. A prior 0.2.3 sample run took 2.67 seconds. These are single-run measurements with uncontrolled cache warmth, not a rigorous speedup claim or percentile benchmark. Offline VAD now runs once inside whisper.cpp; cloud mode still checks locally before upload.
+- Generic shortcut controls, missing-model readiness notice, and floating transcription status were rendered and inspected in an isolated SwiftUI preview. No pedal-specific preset is present. Model/engine/API setup failures open the relevant page; failed delivery opens the current transcript for Copy.
+- Debug/release builds and ad-hoc signing pass. Automatic paste requires Accessibility permission for the running app; an ad-hoc rebuild may require re-enabling it. The packaged update is ready for a user-controlled quit/reopen.
+
+Not yet verified: the physical Elfkey/PCsensor + BetterTouchTool sequence in the new packaged app, broad app/secure-field compatibility, end-to-end live-microphone automatic paste, paid API requests, long-session latency, and continuous speech transcription while recording. The current engine finalizes after Stop. The PRD records warm-model reuse and incremental recognition as follow-up work, with stable final-text reconciliation required before delivery.
+
+## Previous 0.2.3 verification
+
 
 - All 17 tests pass, including F18 with no flags, the function flag, and function+numeric-pad flags. These events capture as F18, match repeatedly on separate presses, and do not require physical Fn. A real Fn press followed by F18 remains distinguishable.
 - Native F18 registration returned success (OSStatus 0) on the development Mac, then the diagnostic registration was removed. This does not rule out interception by a remapper earlier in the event stream.

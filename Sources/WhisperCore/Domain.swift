@@ -115,7 +115,6 @@ public struct KeyboardShortcut: Codable, Equatable {
     }
     public static let fnModifier: UInt32 = 131072
     public static let modifierKeys: Set<UInt32> = [54,55,56,57,58,59,60,61,62,63]
-    public static let f18Pedal = KeyboardShortcut(keyCode: 79, modifiers: 0, keyLabel: "F18")
     public static let standard = KeyboardShortcut(keyCode: 49, modifiers: 2048, keyLabel: "Space")
     public var keys: Set<UInt32> { Set([keyCode] + (additionalKeys ?? [])) }
     public var modifierOnly: Bool { keys.isSubset(of: Self.modifierKeys) }

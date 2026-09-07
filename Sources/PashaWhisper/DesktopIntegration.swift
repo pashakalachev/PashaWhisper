@@ -11,22 +11,32 @@ final class ShortcutController {
     private var configured: KeyboardShortcut?
     private var matcher: ShortcutMatcher?
     private var physicalModifiers: Set<UInt32> = []
+    private var hotkeyHeld = false
     var onPress: (() -> Void)?
     var onAvailability: ((String?) -> Void)?
     init() {
-        var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        InstallEventHandler(GetApplicationEventTarget(), { _, _, context in
-            guard let context else { return OSStatus(eventNotHandledErr) }
+        var specs = [EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
+                     EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased))]
+        InstallEventHandler(GetApplicationEventTarget(), { _, event, context in
+            guard let context, let event else { return OSStatus(eventNotHandledErr) }
+            var hotkey = EventHotKeyID()
+            guard GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil,
+                MemoryLayout<EventHotKeyID>.size, nil, &hotkey) == noErr,
+                hotkey.signature == 0x50534841, hotkey.id == 1 else { return OSStatus(eventNotHandledErr) }
             let owner = Unmanaged<ShortcutController>.fromOpaque(context).takeUnretainedValue()
-            Task { @MainActor in owner.onPress?() }
+            MainActor.assumeIsolated {
+                guard owner.configured != nil else { return }
+                if GetEventKind(event) == UInt32(kEventHotKeyReleased) { owner.hotkeyHeld = false }
+                else if !owner.hotkeyHeld { owner.hotkeyHeld = true; owner.onPress?() }
+            }
             return noErr
-        }, 1, &spec, Unmanaged.passUnretained(self).toOpaque(), &handler)
+        }, specs.count, &specs, Unmanaged.passUnretained(self).toOpaque(), &handler)
     }
     func suspend() {
         if let reference { UnregisterEventHotKey(reference) }; reference = nil
         if let eventTap { CGEvent.tapEnable(tap: eventTap, enable: false); CFMachPortInvalidate(eventTap) }
         if let source { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
-        eventTap = nil; source = nil; configured = nil; matcher = nil; physicalModifiers = []
+        eventTap = nil; source = nil; configured = nil; matcher = nil; physicalModifiers = []; hotkeyHeld = false
     }
     func install(_ shortcut: KeyboardShortcut) throws {
         guard shortcut.isValid else { throw AppFailure.message("Press a key or combination of keys.") }
@@ -113,45 +123,97 @@ enum ShortcutKeys {
     }
 }
 
-/// Exists only while the visible shortcut picker is listening. Captures before
-/// application hotkeys consume F-keys; the ordinary local monitor is the fallback.
+/// The picker accepts both keyboard events and native hotkey notifications.
+/// Remappers can deliver hotkeys without sending AppKit key events. All temporary
+/// registrations are removed when the picker closes or the app deactivates.
 @MainActor
 final class ShortcutCaptureMonitor {
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
     private var generation = UUID()
+    private var hotkeyHandler: EventHandlerRef?
+    private var hotkeys: [EventHotKeyRef] = []
+    private var bindings: [UInt32: (key: UInt32, modifiers: UInt32)] = [:]
     private var onEvent: ((NSEvent) -> Void)?
-    @discardableResult func start(onEvent: @escaping (NSEvent) -> Void) -> Bool {
+    @discardableResult func start(useEventTap: Bool = true, onEvent: @escaping (NSEvent) -> Void) -> Bool {
         stop(); self.onEvent = onEvent
+        startHotkeyCapture()
+        guard useEventTap else { return false }
         let mask = [CGEventType.keyDown, .keyUp, .flagsChanged].reduce(CGEventMask(0)) { $0 | (1 << $1.rawValue) }
-        tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
+        tap = CGEvent.tapCreate(tap: .cgAnnotatedSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
             eventsOfInterest: mask, callback: { _, type, event, context in
                 guard let context else { return Unmanaged.passUnretained(event) }
                 let owner = Unmanaged<ShortcutCaptureMonitor>.fromOpaque(context).takeUnretainedValue()
                 return MainActor.assumeIsolated { owner.receive(type, event) ? nil : Unmanaged.passUnretained(event) }
             }, userInfo: Unmanaged.passUnretained(self).toOpaque())
-        guard let tap else { self.onEvent = nil; return false }
+        guard let tap else { return false }
         source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
         return true
+    }
+    private func enqueue(_ native: NSEvent) {
+        let current = generation
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.generation == current, NSApp.isActive else { return }
+            self.onEvent?(native)
+        }
     }
     private func receive(_ type: CGEventType, _ event: CGEvent) -> Bool {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }; return false
         }
         guard NSApp.isActive, let native = NSEvent(cgEvent: event), onEvent != nil else { return false }
-        let current = generation
-        // Installing a completed shortcut removes this tap. Do that after the tap
-        // callback returns, and reject queued events from canceled captures.
-        DispatchQueue.main.async { [weak self] in
-            guard let self, self.generation == current, NSApp.isActive else { return }
-            self.onEvent?(native)
-        }
+        enqueue(native)
         return true
+    }
+    private func startHotkeyCapture() {
+        var specs = [EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
+                     EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased))]
+        InstallEventHandler(GetApplicationEventTarget(), { _, event, context in
+            guard let event, let context else { return OSStatus(eventNotHandledErr) }
+            let owner = Unmanaged<ShortcutCaptureMonitor>.fromOpaque(context).takeUnretainedValue()
+            return MainActor.assumeIsolated { owner.receiveHotkey(event) }
+        }, specs.count, &specs, Unmanaged.passUnretained(self).toOpaque(), &hotkeyHandler)
+        // Standard modifiers and every supported virtual key, with no device-specific preset.
+        for combination in UInt32(0)..<16 {
+            let bits: [UInt32] = [256, 512, 2048, 4096]
+            let modifiers = bits.enumerated().reduce(UInt32(0)) { $0 | (combination & (1 << $1.offset) != 0 ? $1.element : 0) }
+            for key in UInt32(0)..<128 where !KeyboardShortcut.modifierKeys.contains(key) {
+                let id = combination * 128 + key + 1
+                var ref: EventHotKeyRef?
+                if RegisterEventHotKey(key, modifiers, EventHotKeyID(signature: 0x50534350, id: id),
+                    GetApplicationEventTarget(), 0, &ref) == noErr, let ref {
+                    hotkeys.append(ref); bindings[id] = (key, modifiers)
+                }
+            }
+        }
+    }
+    private func receiveHotkey(_ event: EventRef) -> OSStatus {
+        var hotkey = EventHotKeyID()
+        guard GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil,
+            MemoryLayout<EventHotKeyID>.size, nil, &hotkey) == noErr, hotkey.signature == 0x50534350,
+            let binding = bindings[hotkey.id], NSApp.isActive, onEvent != nil else { return OSStatus(eventNotHandledErr) }
+        if let native = Self.keyEvent(key: binding.key, modifiers: binding.modifiers, down: GetEventKind(event) == UInt32(kEventHotKeyPressed)) {
+            enqueue(native)
+        }
+        return noErr
+    }
+    static func keyEvent(key: UInt32, modifiers: UInt32, down: Bool) -> NSEvent? {
+        guard let event = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(key), keyDown: down) else { return nil }
+        var flags: CGEventFlags = []
+        if modifiers & 256 != 0 { flags.insert(.maskCommand) }
+        if modifiers & 512 != 0 { flags.insert(.maskShift) }
+        if modifiers & 2048 != 0 { flags.insert(.maskAlternate) }
+        if modifiers & 4096 != 0 { flags.insert(.maskControl) }
+        event.flags = flags
+        return NSEvent(cgEvent: event)
     }
     func stop() {
         generation = UUID(); onEvent = nil
+        for hotkey in hotkeys { UnregisterEventHotKey(hotkey) }
+        hotkeys = []; bindings = [:]
+        if let hotkeyHandler { RemoveEventHandler(hotkeyHandler) }; hotkeyHandler = nil
         if let tap { CGEvent.tapEnable(tap: tap, enable: false); CFMachPortInvalidate(tap) }
         if let source { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
         tap = nil; source = nil

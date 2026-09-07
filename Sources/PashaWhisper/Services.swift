@@ -127,13 +127,32 @@ struct TranscriptionRequest {
 }
 
 enum Transcriber {
+    static func validate(_ request: TranscriptionRequest) throws {
+        if request.suppression != .off {
+            guard FileManager.default.fileExists(atPath: AppPaths.vad.path),
+                  request.provider == "Offline" || FileManager.default.isExecutableFile(atPath: AppPaths.runtime.appendingPathComponent("whisper-vad-speech-segments").path) else {
+                throw AppFailure.message("The speech detector is missing from this app. Reinstall the complete PashaWhisper app.")
+            }
+        }
+        if request.provider == "Offline" {
+            guard FileManager.default.fileExists(atPath: AppPaths.models.appendingPathComponent(request.model.filename).path) else {
+                throw AppFailure.message("The selected model is not installed. Download or select a model in Models.")
+            }
+            guard FileManager.default.isExecutableFile(atPath: AppPaths.runtime.appendingPathComponent("whisper-cli").path) else {
+                throw AppFailure.message("The offline speech engine is missing. Reinstall the complete PashaWhisper app.")
+            }
+        } else { _ = try EndpointPolicy.validate(request.endpoint) }
+    }
     static func transcribe(_ request: TranscriptionRequest) async throws -> String {
+        try validate(request)
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("pasha-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         defer { try? FileManager.default.removeItem(at: temp) }
         let runner = ProcessRunner()
         let threshold = request.suppression == .strong ? "0.65" : "0.5"
-        if request.suppression != .off {
+        // Local whisper.cpp runs VAD inside recognition; do not scan the same
+        // recording twice. Cloud requests still check locally before any upload.
+        if request.suppression != .off && request.provider != "Offline" {
             let result = try await runner.run(AppPaths.runtime.appendingPathComponent("whisper-vad-speech-segments"),
                 arguments: ["-vm", AppPaths.vad.path, "-f", request.audio.path, "-vt", threshold, "-vp", "200", "-np"],
                 log: temp.appendingPathComponent("vad.log"))

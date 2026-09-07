@@ -35,7 +35,7 @@ struct MainView: View {
                     Text(model.provider == "Offline" ? "LOCAL BY DEFAULT" : "CLOUD SELECTED").font(Theme.mono(10))
                 }
                 Text("Small app. Big ears.").font(.system(size: 12)).foregroundStyle(Theme.muted).padding(.top, 8)
-                Text("EARLY BUILD  /  0.2.3").font(Theme.mono(9)).foregroundStyle(Theme.muted).padding(.top, 20)
+                Text("EARLY BUILD  /  0.2.4").font(Theme.mono(9)).foregroundStyle(Theme.muted).padding(.top, 20)
             }.padding(22).frame(width: 230).background(Theme.paper)
             Rectangle().fill(Theme.ink).frame(width: 2)
             VStack(spacing: 0) {
@@ -81,12 +81,12 @@ struct DictationView: View {
         HStack(alignment: .center, spacing: 24) {
             VStack(alignment: .leading, spacing: 17) {
                 HStack {
-                    Text(model.recording ? "● ON AIR" : model.transcribing ? "◌ PROCESSING" : "● STANDING BY")
+                    Text(model.recording ? "● ON AIR" : model.transcribing ? "◌ PROCESSING" : model.preparing ? "◌ PREPARING" : model.readinessIssue != nil ? "● SETUP NEEDED" : "● STANDING BY")
                         .font(Theme.mono(10)).tracking(1).foregroundStyle(Theme.red)
                     Spacer()
                     Text(time(model.elapsed)).font(Theme.mono(13))
                 }
-                Text(model.status).font(.system(size: 24, weight: .bold)).fixedSize(horizontal: false, vertical: true)
+                Text(!model.busy && model.readinessIssue != nil ? "Setup needed before recording." : model.status).font(.system(size: 24, weight: .bold)).fixedSize(horizontal: false, vertical: true)
                 Text(model.detail).font(.system(size: 12)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
                 if model.recording {
                     GeometryReader { geo in
@@ -126,6 +126,19 @@ struct DictationView: View {
                 }.labelsHidden().frame(width: 130)
             }
         }.disabled(model.busy)
+        Text("Selected: \(model.providerLabel)").font(Theme.mono(11)).foregroundStyle(Theme.muted)
+        if let issue = model.readinessIssue {
+            Text(issue).font(.system(size: 12)).foregroundStyle(Theme.red)
+        }
+        if !model.accessibilityGranted {
+            HStack {
+                Text("Accessibility access is needed to paste into other apps automatically. Transcription and Copy still work.").font(.system(size: 12)).foregroundStyle(Theme.muted)
+                Button("ENABLE AUTO PASTE") { model.requestAccessibility() }.buttonStyle(BlockButton())
+            }
+        }
+        if let seconds = model.processingSeconds {
+            Text(String(format: "Last transcription: %.2f s after Stop", seconds)).font(Theme.mono(10)).foregroundStyle(Theme.muted)
+        }
         if model.suppression == .strong {
             Text("Strong filtering can miss quiet speech. Use Normal if words are being dropped.").font(.system(size: 12)).foregroundStyle(Theme.red)
         }
@@ -148,7 +161,7 @@ struct DictationView: View {
             SmallLabel(text: "In memory · \(latest.provider) · \(latest.createdAt.formatted(date: .omitted, time: .shortened))")
         } else {
             Text("Your first words belong here.").font(.system(size: 17, weight: .medium))
-            Text("Record, transcribe, then copy into any app. This early build keeps delivery manual while automatic insertion is being built.")
+            Text("Focus a text field in another app, press your shortcut, speak, then press it again. Your completed transcript is pasted into that field.")
                 .font(.system(size: 13)).foregroundStyle(Theme.muted).lineSpacing(4)
         }
     }
@@ -299,13 +312,9 @@ struct ShortcutsView: View {
                     Text(model.shortcutCaptureHint).font(.system(size: 12)).foregroundStyle(Theme.muted)
                 }
                 HStack {
-                    Button("USE F18 PEDAL") { model.cancelShortcutCapture(); model.setShortcut(.f18Pedal) }.buttonStyle(BlockButton()).disabled(model.busy)
-                    Text("Assign F18 directly without listening. macOS may label F18 as Fn+F18; the function-key flag alone does not require a physical Fn press.").font(.system(size: 12)).foregroundStyle(Theme.muted)
-                }
-                HStack {
                     if model.testingShortcut {
                         Button("FINISH TEST") { model.testingShortcut = false }.buttonStyle(BlockButton())
-                        Text(model.shortcutTestCount == 0 ? "Testing: press your pedal. No audio will be recorded." : "Received \(model.shortcut.display) · \(model.shortcutTestCount) press(es). No audio recorded.")
+                        Text(model.shortcutTestCount == 0 ? "Testing: press your shortcut. No audio will be recorded." : "Received \(model.shortcut.display) · \(model.shortcutTestCount) press(es). No audio recorded.")
                             .font(.system(size: 12)).foregroundStyle(Theme.ink)
                     } else {
                         Button("TEST SHORTCUT") { model.beginShortcutTest() }.buttonStyle(BlockButton()).disabled(model.busy || model.capturingShortcut || model.shortcutNotice != nil)
@@ -365,15 +374,19 @@ struct RecordingOverlay: View {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 5) {
                     Circle().fill(Theme.red).frame(width: 5, height: 5)
-                    Text(preview ? "PREVIEW" : "RECORDING").font(Theme.mono(8)).tracking(1.3)
+                    Text(preview ? "PREVIEW" : model.overlayTitle).font(Theme.mono(8)).tracking(1.3)
                 }
-                HStack(alignment: .center, spacing: 3) {
-                    ForEach(Array(amplitudes.enumerated()), id: \.offset) { _, amplitude in
-                        RoundedRectangle(cornerRadius: 1).fill(Theme.paper)
-                            .frame(width: 3, height: max(3, CGFloat(amplitude) * 24))
-                    }
-                }.frame(height: 24).animation(reduceMotion || preview ? nil : .linear(duration: 0.08), value: amplitudes)
-                    .accessibilityLabel(preview ? "Sample waveform" : "Live microphone waveform")
+                if preview || model.recording {
+                    HStack(alignment: .center, spacing: 3) {
+                        ForEach(Array(amplitudes.enumerated()), id: \.offset) { _, amplitude in
+                            RoundedRectangle(cornerRadius: 1).fill(Theme.paper)
+                                .frame(width: 3, height: max(3, CGFloat(amplitude) * 24))
+                        }
+                    }.frame(height: 24).animation(reduceMotion || preview ? nil : .linear(duration: 0.08), value: amplitudes)
+                        .accessibilityLabel(preview ? "Sample waveform" : "Live microphone waveform")
+                } else {
+                    Text(model.overlayDetail).font(.system(size: 10)).lineLimit(2).frame(height: 27, alignment: .leading)
+                }
             }
             Spacer(minLength: 0)
             VStack(alignment: .trailing, spacing: 6) {

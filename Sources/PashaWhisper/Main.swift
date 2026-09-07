@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let shortcutRecorder = ShortcutRecorder()
     private let shortcutCaptureMonitor = ShortcutCaptureMonitor()
     private let anchor = FocusedTextAnchor()
+    private let delivery = TextDelivery()
     private var overlayTimer: Timer?
     private var previewEnd: DispatchWorkItem?
     private var recordMenuItem: NSMenuItem?
@@ -63,18 +64,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self.shortcutController.suspend(); self.shortcutRecorder.reset()
                 self.model.shortcutDraft = self.shortcutRecorder.preview
                 let direct = self.shortcutCaptureMonitor.start { [weak self] event in self?.captureShortcut(event) }
-                self.model.shortcutCaptureHint = direct ? "Listening directly to keyboard and pedal events. Press and release your pedal." : "Listening in this window. If another app intercepts the pedal, use F18 directly below or enable Accessibility."
+                self.model.shortcutCaptureHint = direct ? "Listening to keyboard and native shortcut events. Press and release your shortcut." : "Listening to native shortcuts and keys in this window. Accessibility enables additional key combinations."
             } else {
                 self.shortcutCaptureMonitor.stop()
                 do { try self.shortcutController.install(self.model.shortcut) } catch { self.model.error = error.localizedDescription }
             }
         }
-        model.onWillRecord = { [weak self] in self?.anchor.capture() }
+        model.onWillRecord = { [weak self] in self?.anchor.capture(); self?.delivery.capture() }
+        model.onDeliver = { [weak self] transcript in
+            guard let self else { return "Automatic delivery is unavailable. Copy your transcript." }
+            // The assigned shortcut itself may be Command-V. Let the destination
+            // receive our Paste instead of intercepting it as a new recording.
+            self.shortcutController.suspend()
+            let result = self.delivery.deliver(transcript.text, session: transcript.id)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                guard let self, !self.model.capturingShortcut else { return }
+                do { try self.shortcutController.install(self.model.shortcut) }
+                catch { self.model.error = error.localizedDescription }
+            }
+            return result
+        }
+        model.onNeedsAttention = { [weak self] in self?.showWindow() }
+        model.onOverlayChange = { [weak self] delay in
+            guard let self else { return }
+            if delay == 0 { self.previewEnd?.cancel(); self.hideOverlay(); return }
+            self.showOverlay()
+            if let delay {
+                let work = DispatchWorkItem { [weak self] in self?.hideOverlay() }
+                self.previewEnd = work; DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+            }
+        }
         model.onPreviewOverlay = { [weak self] in self?.previewOverlay() }
         model.onRecordingChange = { [weak self] active in
             guard let self else { return }
             self.statusItem?.button?.contentTintColor = active ? .systemRed : nil
-            if active { self.showOverlay() } else { self.hideOverlay() }
         }
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
             guard let self else { return event }

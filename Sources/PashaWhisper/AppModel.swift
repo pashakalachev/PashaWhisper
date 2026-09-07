@@ -17,6 +17,9 @@ final class AppModel: ObservableObject {
     @Published var levels = Array(repeating: Float(0), count: 22)
     @Published var latest: Transcript?
     @Published var retryAvailable = false
+    @Published var overlayTitle = "PREPARING"
+    @Published var overlayDetail = ""
+    @Published var processingSeconds: TimeInterval?
     @Published var shortcut: KeyboardShortcut
     @Published var capturingShortcut = false
     @Published var shortcutDraft = "Press and release your shortcut…"
@@ -44,6 +47,9 @@ final class AppModel: ObservableObject {
     private var downloadOperation: Task<Void, Never>?
     private var storageFailed = false
     var onRecordingChange: ((Bool) -> Void)?
+    var onOverlayChange: ((TimeInterval?) -> Void)?
+    var onNeedsAttention: (() -> Void)?
+    var onDeliver: ((Transcript) -> String?)?
     var onWillRecord: (() -> Void)?
     var onShortcutRequest: ((KeyboardShortcut) throws -> Void)?
     var onShortcutCapture: ((Bool) -> Void)?
@@ -54,6 +60,22 @@ final class AppModel: ObservableObject {
     var actualEndpoint: String { provider == "OpenAI" ? "https://api.openai.com/v1/audio/transcriptions" : endpoint }
     var actualAPIModel: String { provider == "OpenAI" ? "gpt-transcribe" : apiModel }
     var keyAccount: String { "api:\(actualEndpoint)" }
+    var readinessIssue: String? {
+        if storageFailed { return "Recording storage is unavailable. Restart the app after checking free disk space." }
+        if provider == "Offline" {
+            guard LocalModel.catalog.contains(where: { $0.id == selectedModel }), installed.contains(selectedModel) else {
+                return "Download or select an installed model in Models before recording."
+            }
+        }
+        return nil
+    }
+    func showOverlay(_ title: String, _ message: String, dismissAfter: TimeInterval? = nil) {
+        overlayTitle = title; overlayDetail = message; onOverlayChange?(dismissAfter)
+    }
+    private func needsAttention(_ message: String, section: String, title: String = "SETUP NEEDED") {
+        self.section = section; error = message; status = "Dictation needs attention."; detail = message
+        showOverlay(title, message, dismissAfter: 8); onNeedsAttention?()
+    }
 
     init() {
         let defaults = UserDefaults.standard
@@ -111,23 +133,27 @@ final class AppModel: ObservableObject {
         if recording { stopAndTranscribe() }
         else if !busy {
             onWillRecord?()
+            processingSeconds = nil
             let id = UUID(); sessionID = id; preparing = true
             operation = Task { await startRecording(id: id) }
         }
     }
     private func startRecording(id: UUID) async {
         defer { if sessionID == id { preparing = false } }
-        guard !recording, !transcribing, !storageFailed, sessionID == id else { return }
+        guard !recording, !transcribing, sessionID == id else { return }
         error = nil
-        if provider == "Offline" && !installed.contains(selectedModel) { section = "Models"; error = "Download or select a model before recording."; return }
-        if provider == "OpenAI" && Keychain.load(account: keyAccount).isEmpty { section = "Providers"; error = "Save your OpenAI API key before recording."; return }
-        if provider != "Offline" {
-            do { _ = try EndpointPolicy.validate(actualEndpoint) } catch { self.error = error.localizedDescription; section = "Providers"; return }
+        refreshModels()
+        if let issue = readinessIssue { needsAttention(issue, section: storageFailed ? "Privacy" : "Models"); return }
+        if provider == "OpenAI" && Keychain.load(account: keyAccount).isEmpty {
+            needsAttention("Save your OpenAI API key before recording.", section: "Providers"); return
         }
+        do { try Transcriber.validate(makeRequest(audio: AppPaths.recordings.appendingPathComponent("preflight.wav"))) }
+        catch { needsAttention(error.localizedDescription, section: provider == "Offline" ? "Models" : "Providers"); return }
         status = "Checking microphone…"
+        showOverlay("PREPARING", "Checking microphone access…")
         let allowed = await AVCaptureDevice.requestAccess(for: .audio)
         guard !Task.isCancelled, sessionID == id else { return }
-        guard allowed else { status = "Microphone access needed."; error = "Allow PashaWhisper in System Settings → Privacy & Security → Microphone."; return }
+        guard allowed else { needsAttention("Allow PashaWhisper in System Settings → Privacy & Security → Microphone.", section: "Privacy"); return }
         discardAudio(); latest = nil
         let audio = AppPaths.recordings.appendingPathComponent("\(id.uuidString).wav")
         do {
@@ -143,7 +169,8 @@ final class AppModel: ObservableObject {
                 }
             }
             onRecordingChange?(true)
-        } catch { self.error = error.localizedDescription; status = "Could not start recording."; try? FileManager.default.removeItem(at: audio) }
+            showOverlay("RECORDING", providerLabel)
+        } catch { needsAttention(error.localizedDescription, section: "Privacy", title: "MICROPHONE ERROR"); try? FileManager.default.removeItem(at: audio) }
     }
     func stopAndTranscribe() {
         guard recording, let audio = currentAudio, let id = sessionID else { return }
@@ -157,13 +184,18 @@ final class AppModel: ObservableObject {
         let id = UUID(); sessionID = id; transcribing = true
         operation = Task { await process(audio, id: id, duration: elapsed) }
     }
+    private func makeRequest(audio: URL) -> TranscriptionRequest {
+        TranscriptionRequest(audio: audio, model: model, provider: provider, endpoint: actualEndpoint,
+            apiModel: actualAPIModel, key: provider == "Offline" ? "" : Keychain.load(account: keyAccount), language: language, suppression: suppression)
+    }
     private func process(_ audio: URL, id: UUID, duration: TimeInterval) async {
         guard !storageFailed, !Task.isCancelled, sessionID == id else { return }
         transcribing = true; retryAvailable = false; error = nil
         status = "Turning sound into words…"; detail = "Processing with \(providerLabel)."
         let providerName = providerLabel
-        let request = TranscriptionRequest(audio: audio, model: model, provider: provider, endpoint: actualEndpoint,
-            apiModel: actualAPIModel, key: provider == "Offline" ? "" : Keychain.load(account: keyAccount), language: language, suppression: suppression)
+        let request = makeRequest(audio: audio)
+        let started = Date()
+        showOverlay("TRANSCRIBING", providerName)
         defer {
             if sessionID == id {
                 transcribing = false
@@ -173,15 +205,32 @@ final class AppModel: ObservableObject {
         do {
             let raw = try await Transcriber.transcribe(request)
             try Task.checkCancellation(); guard sessionID == id else { return }
+            processingSeconds = Date().timeIntervalSince(started)
             let text = TranscriptFilter.clean(raw, mode: request.suppression)
-            guard !text.isEmpty else { status = "No speech detected."; detail = "Nothing copied. Recording deleted."; return }
-            latest = Transcript(id: id, text: text, rawText: raw, provider: providerName, duration: duration)
-            status = "Your words are ready."
-            detail = "Copy the result below. No transcript history is stored."
+            guard !text.isEmpty else {
+                status = "No speech detected."; detail = "Nothing pasted. Check your microphone or speech filtering if you spoke."
+                showOverlay("NO SPEECH DETECTED", "Check microphone and speech filtering.", dismissAfter: 6); return
+            }
+            let transcript = Transcript(id: id, text: text, rawText: raw, provider: providerName, duration: duration)
+            latest = transcript
+            showOverlay("PASTING", "Sending your transcript…")
+            let deliveryProblem: String?
+            if let onDeliver { deliveryProblem = onDeliver(transcript) }
+            else { deliveryProblem = "Automatic delivery is unavailable. Copy the transcript below." }
+            if let problem = deliveryProblem {
+                status = "Transcript ready to copy."; detail = problem; section = "Dictation"
+                showOverlay("TRANSCRIPT READY", "Open PashaWhisper to copy.", dismissAfter: 7)
+                onNeedsAttention?()
+            } else {
+                status = "Paste sent to your text field."
+                detail = "The transcript is also available below and on the clipboard."
+                showOverlay("PASTE SENT", "Transcript kept for recovery.", dismissAfter: 2)
+            }
         } catch is CancellationError {
             if sessionID == id { status = "Transcription canceled."; detail = "Nothing copied." }
         } catch {
-            if sessionID == id { self.error = error.localizedDescription; status = "Transcription needs another try."; detail = "Retry this recording below before you quit or start another."; retryAvailable = true }
+            if sessionID == id { self.error = error.localizedDescription; status = "Transcription needs another try."; detail = "Retry this recording below before you quit or start another."; retryAvailable = true
+                section = "Dictation"; showOverlay("TRANSCRIPTION FAILED", "Open PashaWhisper to retry.", dismissAfter: 8); onNeedsAttention?() }
         }
     }
     func discardAudio() {
@@ -194,6 +243,7 @@ final class AppModel: ObservableObject {
         sessionID = nil; recording = false; preparing = false; transcribing = false; level = 0
         onRecordingChange?(false); discardAudio()
         status = "Canceled."; detail = "Recording deleted. Nothing copied."
+        showOverlay("CANCELED", "Recording deleted.", dismissAfter: 0)
     }
     func shutdown() { cancel(); latest = nil; try? AppPaths.clearTransientAudio() }
     func interruptRecording() { guard recording else { return }; cancel(); status = "Recording stopped by sleep." }
