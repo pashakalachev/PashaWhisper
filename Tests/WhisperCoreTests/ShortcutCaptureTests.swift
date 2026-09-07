@@ -40,6 +40,31 @@ final class ShortcutCaptureTests: XCTestCase {
         XCTAssertEqual(ShortcutKeys.input(event(.keyDown, key: 101, flags: .function))?.modifiers, 0)
         XCTAssertEqual(ShortcutKeys.input(event(.keyDown, key: 101, flags: .function), held: [63])?.modifiers, KeyboardShortcut.fnModifier)
     }
+    @MainActor func testPedalF18FunctionFlagIsNotPhysicalFn() {
+        for flags: NSEvent.ModifierFlags in [[], .function, [.function, .numericPad]] {
+            let recorder = ShortcutRecorder()
+            XCTAssertNil(recorder.observe(event(.keyDown, key: 79, flags: flags, text: "\u{F715}")))
+            let saved = recorder.observe(event(.keyUp, key: 79, flags: flags, text: "\u{F715}"))
+            XCTAssertEqual(saved, .f18Pedal)
+            XCTAssertFalse(saved!.needsEventTap)
+            var matcher = ShortcutMatcher(shortcut: saved!)
+            let down = ShortcutKeys.input(event(.keyDown, key: 79, flags: flags))!
+            XCTAssertTrue(matcher.update(key: down.key, down: down.down, modifiers: down.modifiers).trigger)
+            let up = ShortcutKeys.input(event(.keyUp, key: 79, flags: flags))!
+            XCTAssertFalse(matcher.update(key: up.key, down: up.down, modifiers: up.modifiers).trigger)
+            XCTAssertTrue(matcher.update(key: down.key, down: down.down, modifiers: down.modifiers).trigger)
+        }
+    }
+    @MainActor func testRealFnPlusF18RemainsDistinct() {
+        let recorder = ShortcutRecorder()
+        _ = recorder.observe(event(.flagsChanged, key: 63, flags: .function))
+        _ = recorder.observe(event(.keyDown, key: 79, flags: .function))
+        XCTAssertNil(recorder.observe(event(.keyUp, key: 79, flags: .function)))
+        let saved = recorder.observe(event(.flagsChanged, key: 63))
+        XCTAssertEqual(saved?.keyCode, 79)
+        XCTAssertEqual(saved?.modifiers, KeyboardShortcut.fnModifier)
+        XCTAssertEqual(saved?.display, "Fn+F18")
+    }
     @MainActor func testMultipleNormalKeysAreSavedAsAChord() {
         let recorder = ShortcutRecorder()
         _ = recorder.observe(event(.keyDown, key: 0, text: "a"))

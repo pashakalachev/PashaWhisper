@@ -113,6 +113,51 @@ enum ShortcutKeys {
     }
 }
 
+/// Exists only while the visible shortcut picker is listening. Captures before
+/// application hotkeys consume F-keys; the ordinary local monitor is the fallback.
+@MainActor
+final class ShortcutCaptureMonitor {
+    private var tap: CFMachPort?
+    private var source: CFRunLoopSource?
+    private var generation = UUID()
+    private var onEvent: ((NSEvent) -> Void)?
+    @discardableResult func start(onEvent: @escaping (NSEvent) -> Void) -> Bool {
+        stop(); self.onEvent = onEvent
+        let mask = [CGEventType.keyDown, .keyUp, .flagsChanged].reduce(CGEventMask(0)) { $0 | (1 << $1.rawValue) }
+        tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
+            eventsOfInterest: mask, callback: { _, type, event, context in
+                guard let context else { return Unmanaged.passUnretained(event) }
+                let owner = Unmanaged<ShortcutCaptureMonitor>.fromOpaque(context).takeUnretainedValue()
+                return MainActor.assumeIsolated { owner.receive(type, event) ? nil : Unmanaged.passUnretained(event) }
+            }, userInfo: Unmanaged.passUnretained(self).toOpaque())
+        guard let tap else { self.onEvent = nil; return false }
+        source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+        return true
+    }
+    private func receive(_ type: CGEventType, _ event: CGEvent) -> Bool {
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            if let tap { CGEvent.tapEnable(tap: tap, enable: true) }; return false
+        }
+        guard NSApp.isActive, let native = NSEvent(cgEvent: event), onEvent != nil else { return false }
+        let current = generation
+        // Installing a completed shortcut removes this tap. Do that after the tap
+        // callback returns, and reject queued events from canceled captures.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.generation == current, NSApp.isActive else { return }
+            self.onEvent?(native)
+        }
+        return true
+    }
+    func stop() {
+        generation = UUID(); onEvent = nil
+        if let tap { CGEvent.tapEnable(tap: tap, enable: false); CFMachPortInvalidate(tap) }
+        if let source { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
+        tap = nil; source = nil
+    }
+}
+
 @MainActor
 final class ShortcutRecorder {
     private var gesture = ShortcutGesture()

@@ -1,4 +1,15 @@
-# Verification — 0.2.2 — September 6, 2026
+# Verification — 0.2.3 — September 6, 2026
+
+- All 17 tests pass, including F18 with no flags, the function flag, and function+numeric-pad flags. These events capture as F18, match repeatedly on separate presses, and do not require physical Fn. A real Fn press followed by F18 remains distinguishable.
+- Native F18 registration returned success (OSStatus 0) on the development Mac, then the diagnostic registration was removed. This does not rule out interception by a remapper earlier in the event stream.
+- The picker now uses a temporary head-insert session event tap when available, ahead of application hotkey handling. It falls back to window events without permission and stops on assignment, cancel, deactivation, close, or quit. Queued events from an old capture are rejected.
+- The actual SwiftUI F18 preset and shortcut test were rendered in an isolated preview. Calling the shortcut callback in test mode incremented its counter without setting recording, preparing, or transcribing. This is an app-state test, not a physical pedal test.
+- A 45-second read-only live diagnostic restricted to F18/Fn saw no matching events; no confirmation was received that the pedal was pressed during that window. Physical pedal behavior remains unverified.
+- Debug/release builds and ad-hoc signature verification pass. `--test-shortcut` opens the no-audio test screen for hands-on verification.
+
+Apple documents that the function modifier includes F-keys and navigation keys: [NSEvent function flag](https://developer.apple.com/documentation/appkit/nsevent/modifierflags-swift.struct/function). The early capture listener uses [head-insert event tap placement](https://developer.apple.com/documentation/coregraphics/cgeventtapplacement/headinserteventtap).
+
+## Previous 0.2.2 verification
 
 - Debug and packaged release builds succeed; ad-hoc signature verification passes.
 - Checked the actual SwiftUI sidebar in an isolated native preview, using temporary app data and no microphone. With Shortcuts selected, pointer mode has no lingering Dictation focus outline. Switching to Models retains only the selected-page background in pointer mode.

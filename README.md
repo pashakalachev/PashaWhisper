@@ -17,6 +17,8 @@ This repository contains the source; build the app using the **Develop** instruc
 
 Shortcuts accept single keys (including Space, Escape, and F-keys), modifier-only taps, Fn/Globe, and multi-key chords. Press and release the combination to save it. Some bindings require Accessibility; use **Enable Shortcut Access** when shown. Modifier-only shortcuts trigger on release, and using a modifier to type or click does not trigger dictation. macOS may reserve some hardware/system combinations.
 
+For an F18 pedal, choose **Shortcuts → Use F18 Pedal**, then **Test Shortcut**. The test counts shortcut presses without recording audio; click Finish Test to resume dictation. Direct assignment avoids the need to capture an event already intercepted by another app. The picker also uses an earlier system event listener when Accessibility is available and stops listening when the app loses focus.
+
 Closing the window leaves the app in the menu bar. Use the cat menu to reopen it or quit. The first build deliberately uses manual copying; automatic insertion is not yet implemented.
 
 Download a larger or multilingual model from Models. Choose OpenAI or Custom API under Providers to use your own key. Keys are stored in macOS Keychain. Cloud recording is always an explicit choice. API integration has not been tested against a paid live account.

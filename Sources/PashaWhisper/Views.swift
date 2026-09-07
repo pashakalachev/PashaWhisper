@@ -14,7 +14,7 @@ struct MainView: View {
                 }.padding(.bottom, 27)
                 SmallLabel(text: "Speech department / 01").padding(.bottom, 24)
                 ForEach(sections, id: \.0) { item in
-                    Button { model.cancelShortcutCapture(); model.section = item.0 } label: {
+                    Button { model.cancelShortcutCapture(); model.testingShortcut = false; model.section = item.0 } label: {
                         HStack(spacing: 12) {
                             Image(systemName: item.1).frame(width: 18)
                             Text(item.0).font(.system(size: 14, weight: .semibold))
@@ -35,7 +35,7 @@ struct MainView: View {
                     Text(model.provider == "Offline" ? "LOCAL BY DEFAULT" : "CLOUD SELECTED").font(Theme.mono(10))
                 }
                 Text("Small app. Big ears.").font(.system(size: 12)).foregroundStyle(Theme.muted).padding(.top, 8)
-                Text("EARLY BUILD  /  0.2.2").font(Theme.mono(9)).foregroundStyle(Theme.muted).padding(.top, 20)
+                Text("EARLY BUILD  /  0.2.3").font(Theme.mono(9)).foregroundStyle(Theme.muted).padding(.top, 20)
             }.padding(22).frame(width: 230).background(Theme.paper)
             Rectangle().fill(Theme.ink).frame(width: 2)
             VStack(spacing: 0) {
@@ -295,6 +295,22 @@ struct ShortcutsView: View {
                         Button("RESET TO ⌥SPACE") { model.beginShortcutCapture(); model.setShortcut(.standard) }.buttonStyle(BlockButton())
                     }
                 }.disabled(model.busy)
+                if model.capturingShortcut {
+                    Text(model.shortcutCaptureHint).font(.system(size: 12)).foregroundStyle(Theme.muted)
+                }
+                HStack {
+                    Button("USE F18 PEDAL") { model.cancelShortcutCapture(); model.setShortcut(.f18Pedal) }.buttonStyle(BlockButton()).disabled(model.busy)
+                    Text("Assign F18 directly without listening. macOS may label F18 as Fn+F18; the function-key flag alone does not require a physical Fn press.").font(.system(size: 12)).foregroundStyle(Theme.muted)
+                }
+                HStack {
+                    if model.testingShortcut {
+                        Button("FINISH TEST") { model.testingShortcut = false }.buttonStyle(BlockButton())
+                        Text(model.shortcutTestCount == 0 ? "Testing: press your pedal. No audio will be recorded." : "Received \(model.shortcut.display) · \(model.shortcutTestCount) press(es). No audio recorded.")
+                            .font(.system(size: 12)).foregroundStyle(Theme.ink)
+                    } else {
+                        Button("TEST SHORTCUT") { model.beginShortcutTest() }.buttonStyle(BlockButton()).disabled(model.busy || model.capturingShortcut || model.shortcutNotice != nil)
+                    }
+                }
                 Text("Single-key shortcuts take over that key. Modifier-only shortcuts trigger on release, so using the modifier to type does not start dictation. Multi-key chords can type their first keys before the chord completes.").font(.system(size: 12)).foregroundStyle(Theme.muted)
                 if let notice = model.shortcutNotice {
                     Text(notice).font(.system(size: 12)).foregroundStyle(Theme.red)

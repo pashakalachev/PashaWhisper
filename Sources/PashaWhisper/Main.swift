@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var statusItem: NSStatusItem?
     private let shortcutController = ShortcutController()
     private let shortcutRecorder = ShortcutRecorder()
+    private let shortcutCaptureMonitor = ShortcutCaptureMonitor()
     private let anchor = FocusedTextAnchor()
     private var overlayTimer: Timer?
     private var previewEnd: DispatchWorkItem?
@@ -47,18 +48,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             button.setAccessibilityLabel("PashaWhisper")
         }
         shortcutController.onAvailability = { [weak self] in self?.model.shortcutNotice = $0 }
-        shortcutController.onPress = { [weak self] in self?.model.toggleRecording() }
+        shortcutController.onPress = { [weak self] in self?.model.receivedShortcut() }
         do { try shortcutController.install(model.shortcut) } catch { model.error = error.localizedDescription }
         model.onShortcutRequest = { [weak self] shortcut in
             guard let self else { return }
+            self.shortcutCaptureMonitor.stop()
             try self.shortcutController.install(shortcut)
             self.recordMenuItem?.title = "Start / Stop Dictation    \(shortcut.display)"
             self.statusItem?.button?.toolTip = "PashaWhisper · \(shortcut.display) to dictate"
         }
         model.onShortcutCapture = { [weak self] capturing in
             guard let self else { return }
-            if capturing { self.shortcutController.suspend(); self.shortcutRecorder.reset(); self.model.shortcutDraft = self.shortcutRecorder.preview }
-            else { do { try self.shortcutController.install(self.model.shortcut) } catch { self.model.error = error.localizedDescription } }
+            if capturing {
+                self.shortcutController.suspend(); self.shortcutRecorder.reset()
+                self.model.shortcutDraft = self.shortcutRecorder.preview
+                let direct = self.shortcutCaptureMonitor.start { [weak self] event in self?.captureShortcut(event) }
+                self.model.shortcutCaptureHint = direct ? "Listening directly to keyboard and pedal events. Press and release your pedal." : "Listening in this window. If another app intercepts the pedal, use F18 directly below or enable Accessibility."
+            } else {
+                self.shortcutCaptureMonitor.stop()
+                do { try self.shortcutController.install(self.model.shortcut) } catch { self.model.error = error.localizedDescription }
+            }
         }
         model.onWillRecord = { [weak self] in self?.anchor.capture() }
         model.onPreviewOverlay = { [weak self] in self?.previewOverlay() }
@@ -77,8 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self.model.keyboardNavigation = true
             }
             if self.model.capturingShortcut {
-                if let candidate = self.shortcutRecorder.observe(event) { self.model.setShortcut(candidate) }
-                else { self.model.shortcutDraft = self.shortcutRecorder.preview }
+                self.captureShortcut(event)
                 return nil
             }
             if event.type == .keyDown, event.keyCode == 53, !self.model.shortcut.keys.contains(53), self.model.busy { self.model.cancel(); return nil }
@@ -88,7 +96,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let section = CommandLine.arguments[index + 1]
             if ["Dictation", "Models", "Providers", "Shortcuts", "Privacy"].contains(section) { model.section = section }
         }
+        if CommandLine.arguments.contains("--test-shortcut") { model.section = "Shortcuts"; model.beginShortcutTest() }
         showWindow()
+    }
+    private func captureShortcut(_ event: NSEvent) {
+        guard model.capturingShortcut else { return }
+        if let candidate = shortcutRecorder.observe(event) { model.setShortcut(candidate) }
+        else { model.shortcutDraft = shortcutRecorder.preview }
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showWindow(); return true }
     @objc func toggle() { model.toggleRecording() }
@@ -138,14 +152,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let work = DispatchWorkItem { [weak self] in self?.hideOverlay() }
         previewEnd = work; DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: work)
     }
-    func applicationDidResignActive(_ notification: Notification) { model.keyboardNavigation = false }
+    func applicationDidResignActive(_ notification: Notification) { model.keyboardNavigation = false; model.cancelShortcutCapture() }
     func applicationDidBecomeActive(_ notification: Notification) { model.accessibilityGranted = AXIsProcessTrusted(); shortcutController.refreshPermission() }
-    func windowWillClose(_ notification: Notification) { if model.capturingShortcut { model.cancelShortcutCapture() } }
+    func windowWillClose(_ notification: Notification) { model.testingShortcut = false; if model.capturingShortcut { model.cancelShortcutCapture() } }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         model.shutdown(); return .terminateNow
     }
     func applicationWillTerminate(_ notification: Notification) {
-        model.shutdown(); shortcutController.shutdown(); hideOverlay()
+        model.shutdown(); shortcutCaptureMonitor.stop(); shortcutController.shutdown(); hideOverlay()
         if let localMonitor { NSEvent.removeMonitor(localMonitor) }
     }
 

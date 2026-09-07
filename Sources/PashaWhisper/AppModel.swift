@@ -21,6 +21,9 @@ final class AppModel: ObservableObject {
     @Published var capturingShortcut = false
     @Published var shortcutDraft = "Press and release your shortcut…"
     @Published var shortcutNotice: String?
+    @Published var shortcutCaptureHint = ""
+    @Published var testingShortcut = false
+    @Published var shortcutTestCount = 0
     @Published var accessibilityGranted = AXIsProcessTrusted()
     @Published var installed: Set<String> = []
     @Published var downloading: String?
@@ -79,9 +82,10 @@ final class AppModel: ObservableObject {
         }
     }
     func refreshModels() { installed = Set(LocalModel.catalog.filter { FileManager.default.fileExists(atPath: AppPaths.models.appendingPathComponent($0.filename).path) }.map(\.id)) }
-    func beginShortcutCapture() { guard !busy else { return }; error = nil; capturingShortcut = true; onShortcutCapture?(true) }
+    func beginShortcutCapture() { guard !busy else { return }; testingShortcut = false; error = nil; capturingShortcut = true; onShortcutCapture?(true) }
     func cancelShortcutCapture() { guard capturingShortcut else { return }; capturingShortcut = false; onShortcutCapture?(false) }
     func setShortcut(_ candidate: KeyboardShortcut) {
+        testingShortcut = false; shortcutTestCount = 0
         guard candidate.isValid else { error = "Press a key or combination of keys."; return }
         do {
             try onShortcutRequest?(candidate)
@@ -93,7 +97,16 @@ final class AppModel: ObservableObject {
         _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
         accessibilityGranted = AXIsProcessTrusted()
     }
+    func receivedShortcut() {
+        if testingShortcut { shortcutTestCount += 1; return }
+        toggleRecording()
+    }
+    func beginShortcutTest() {
+        guard !busy, !capturingShortcut else { return }
+        shortcutTestCount = 0; testingShortcut = true
+    }
     func toggleRecording() {
+        testingShortcut = false
         guard !capturingShortcut else { return }
         if recording { stopAndTranscribe() }
         else if !busy {
