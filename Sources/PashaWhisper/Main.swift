@@ -85,6 +85,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
             return result
         }
+        model.onRestartRequested = {
+            // LaunchServices starts a replacement that waits for this process to
+            // exit, so the ordinary single-instance guard does not swallow it.
+            let launcher = Process()
+            launcher.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            launcher.arguments = ["-n", Bundle.main.bundleURL.path, "--args", "--relaunch-after", String(ProcessInfo.processInfo.processIdentifier)]
+            try launcher.run()
+            NSApp.terminate(nil)
+        }
         model.onNeedsAttention = { [weak self] in self?.showWindow() }
         model.onOverlayChange = { [weak self] delay in
             guard let self else { return }
@@ -118,7 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         if let index = CommandLine.arguments.firstIndex(of: "--section"), CommandLine.arguments.count > index + 1 {
             let section = CommandLine.arguments[index + 1]
-            if ["Dictation", "Models", "Providers", "Shortcuts", "Privacy"].contains(section) { model.section = section }
+            if ["Setup", "Dictation", "Models", "Providers", "Shortcuts", "Privacy"].contains(section) { model.section = section }
         }
         if CommandLine.arguments.contains("--test-shortcut") { model.section = "Shortcuts"; model.beginShortcutTest() }
         model.refreshPermissions()
@@ -215,6 +224,15 @@ struct PashaWhisperMain {
             } catch { fputs("\(error.localizedDescription)\n", stderr); exit(1) }
             }
             dispatchMain()
+        }
+        if let index = CommandLine.arguments.firstIndex(of: "--relaunch-after"),
+           CommandLine.arguments.count > index + 1,
+           let pid = Int32(CommandLine.arguments[index + 1]),
+           let previous = NSRunningApplication(processIdentifier: pid),
+           previous.bundleIdentifier == "com.pasha.whisper" {
+            let deadline = Date().addingTimeInterval(10)
+            while !previous.isTerminated && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
+            guard previous.isTerminated else { return }
         }
         let app = NSApplication.shared
         if let existing = NSRunningApplication.runningApplications(withBundleIdentifier: "com.pasha.whisper").first(where: { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }) {

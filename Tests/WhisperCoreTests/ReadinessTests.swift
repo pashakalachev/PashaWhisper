@@ -1,5 +1,6 @@
 import XCTest
 import Foundation
+import WhisperCore
 @testable import PashaWhisper
 
 final class ReadinessTests: XCTestCase {
@@ -32,8 +33,31 @@ final class ReadinessTests: XCTestCase {
         setup.toggleRecording()
         XCTAssertFalse(setup.busy); XCTAssertEqual(setup.section, "Setup")
         XCTAssertFalse(setup.autoPasteReady)
+        var restarted = false
+        setup.onRestartRequested = { restarted = true }
+        setup.retryAvailable = true
+        setup.restartForPermissions()
+        XCTAssertFalse(restarted)
+        setup.retryAvailable = false
+        setup.latest = Transcript(id: UUID(), text: "keep this result", rawText: "keep this result", provider: "Offline", duration: 1)
+        setup.restartForPermissions()
+        XCTAssertFalse(restarted)
+        setup.latest = nil
+        setup.recording = true
+        setup.restartForPermissions()
+        XCTAssertFalse(restarted)
+        setup.recording = false
+        setup.downloading = "model"
+        setup.restartForPermissions()
+        XCTAssertFalse(restarted)
+        setup.downloading = nil
+        setup.restartForPermissions()
+        XCTAssertTrue(restarted)
+        restarted = false
         access = PermissionState(accessibility: true, eventPosting: true, microphone: .authorized)
         setup.refreshPermissions()
         XCTAssertTrue(setup.autoPasteReady); XCTAssertTrue(setup.permissions.ready)
+        setup.restartForPermissions()
+        XCTAssertFalse(restarted)
     }
 }

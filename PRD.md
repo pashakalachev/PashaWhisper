@@ -172,3 +172,7 @@ Planning estimate for one experienced macOS engineer: roughly 2–4 weeks for a 
 The fastest personal workaround could be investigating Handy's existing delivery code, since Handy is open source. This PRD recommends a native app when the objective is an independently controlled, minimal Mac utility; it does not assume a rewrite is required to fix the reported bug. [Handy repository](https://github.com/cjpais/Handy)
 
 **Definition of done:** The user can dictate for five minutes, pause naturally, obtain a clean transcript with a chosen offline model or API, and recover the result immediately if insertion fails—without repeating the dictation.
+
+### Permission refresh recovery
+
+When Accessibility is approved but the running process still reports paste-command access denied, Setup must acknowledge the grant and offer a restart to recheck access. Do not send users through repeated Accessibility approval. Restart must preserve active recording, processing, downloads, current results, and retry audio by requiring those to be completed or explicitly cleared first.

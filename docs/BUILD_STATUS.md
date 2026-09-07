@@ -1,10 +1,10 @@
-# Build status — 0.2.5
+# Build status — 0.2.6
 
 Native macOS development build; the full release requirements remain in [PRD.md](../PRD.md).
 
 Implemented:
 
-- Permission-first Setup: default automatic paste, verified field access and event posting, then microphone. Live permission refresh and guidance for a stale enabled entry; dictation waits until permission checks pass.
+- Permission-first Setup: default automatic paste, verified field access and event posting, then microphone. Explicit restart recovery for stale paste-command checks after Accessibility approval. Live permission refresh and guidance for a stale enabled entry; dictation waits until permission checks pass.
 - Certificate-signed builds using an available Developer ID or Apple Development identity. Ad-hoc signing requires explicit opt-in.
 
 - Menu-bar utility and Soviet constructivist cat identity throughout. Sidebar focus rings appear during Tab navigation and clear on mouse use or app deactivation; the full navigation row is clickable.

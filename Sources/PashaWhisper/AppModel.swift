@@ -29,7 +29,6 @@ final class AppModel: ObservableObject {
     @Published var shortcutTestCount = 0
     @Published var permissions = PermissionState.current()
     @Published var setupCompleted = UserDefaults.standard.bool(forKey: "setupCompleted")
-    @Published var permissionRequested = false
     var accessibilityGranted: Bool { permissions.accessibility }
     var autoPasteReady: Bool { permissions.autoPasteReady }
     var needsSetup: Bool { !setupCompleted || !permissions.ready }
@@ -53,6 +52,8 @@ final class AppModel: ObservableObject {
     private var operation: Task<Void, Never>?
     private var downloadOperation: Task<Void, Never>?
     private var storageFailed = false
+    var onRestartRequested: (() throws -> Void)?
+    var canRestartForPermissions: Bool { !busy && latest == nil && !retryAvailable && downloading == nil }
     var onRecordingChange: ((Bool) -> Void)?
     var onOverlayChange: ((TimeInterval?) -> Void)?
     var onNeedsAttention: (() -> Void)?
@@ -131,12 +132,25 @@ final class AppModel: ObservableObject {
     func requestAccessibility() {
         refreshPermissions()
         guard !autoPasteReady else { return }
-        permissionRequested = true
         if !permissions.accessibility {
             _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
-        } else if !permissions.eventPosting { _ = CGRequestPostEventAccess() }
+        } else {
+            // Accessibility is already approved. Re-requesting it cannot clear
+            // the cached Core Graphics denial; Setup offers a restart instead.
+            return
+        }
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
         refreshPermissions()
+    }
+    func restartForPermissions() {
+        refreshPermissions()
+        guard permissions.pasteNeedsRestart else { return }
+        guard canRestartForPermissions else {
+            error = "Finish active work and copy and clear your current result before restarting."
+            return
+        }
+        do { try onRestartRequested?() }
+        catch { self.error = "Could not restart PashaWhisper: \(error.localizedDescription). Quit and reopen the app." }
     }
     func requestMicrophone() {
         refreshPermissions()

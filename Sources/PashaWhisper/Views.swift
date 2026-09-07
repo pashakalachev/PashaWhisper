@@ -35,7 +35,7 @@ struct MainView: View {
                     Text(model.provider == "Offline" ? "LOCAL BY DEFAULT" : "CLOUD SELECTED").font(Theme.mono(10))
                 }
                 Text("Small app. Big ears.").font(.system(size: 12)).foregroundStyle(Theme.muted).padding(.top, 8)
-                Text("EARLY BUILD  /  0.2.5").font(Theme.mono(9)).foregroundStyle(Theme.muted).padding(.top, 20)
+                Text("EARLY BUILD  /  0.2.6").font(Theme.mono(9)).foregroundStyle(Theme.muted).padding(.top, 20)
             }.padding(22).frame(width: 230).background(Theme.paper)
             Rectangle().fill(Theme.ink).frame(width: 2)
             VStack(spacing: 0) {
@@ -71,25 +71,34 @@ struct SetupView: View {
         PosterCard {
             VStack(alignment: .leading, spacing: 18) {
                 SmallLabel(text: "01 / Automatic paste")
-                Text(model.autoPasteReady ? "Automatic paste is ready." : "Allow text to land where you speak.").font(Theme.title(24))
+                Text(model.autoPasteReady ? "Automatic paste is ready." : model.permissions.pasteNeedsRestart ? "Permission granted. Restart to finish." : "Allow text to land where you speak.").font(Theme.title(24))
                 Text("Accessibility lets PashaWhisper paste into your focused text field and position the cat beside it. macOS asks you to approve this access.").font(.system(size: 13)).lineSpacing(4)
                 HStack {
                     Image(systemName: model.autoPasteReady ? "checkmark.circle.fill" : "circle")
-                    Text(model.autoPasteReady ? "Verified for this running app" : "Waiting for macOS permission").font(Theme.mono(11))
+                    Text(model.autoPasteReady ? "Verified for this running app" : model.permissions.pasteNeedsRestart ? "Accessibility allowed · Paste access needs a fresh check" : "Waiting for macOS permission").font(Theme.mono(11))
                 }.foregroundStyle(model.autoPasteReady ? Theme.ink : Theme.red)
                 if !model.autoPasteReady {
-                    HStack {
-                        Button("ALLOW AUTOMATIC PASTE") { model.requestAccessibility() }.buttonStyle(BlockButton(primary: true))
-                        Button("CHECK AGAIN") { model.refreshPermissions() }.buttonStyle(BlockButton())
+                    if model.permissions.pasteNeedsRestart {
+                        Text("macOS has approved Accessibility, but this running app still reports that paste commands are unavailable. Restart PashaWhisper to check again in a fresh session.").font(.system(size: 13)).lineSpacing(4)
+                        Button("RESTART PASHAWHISPER") { model.restartForPermissions() }
+                            .buttonStyle(BlockButton(primary: true)).disabled(!model.canRestartForPermissions)
+                        if !model.canRestartForPermissions {
+                            Text("Finish active work, then copy and clear your current result before restarting.").font(.system(size: 12))
+                        }
+                    } else {
+                        HStack {
+                            Button("ALLOW AUTOMATIC PASTE") { model.requestAccessibility() }.buttonStyle(BlockButton(primary: true))
+                            Button("CHECK AGAIN") { model.refreshPermissions() }.buttonStyle(BlockButton())
+                        }
+                        DisclosureGroup("Already enabled in System Settings?") {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("The enabled entry can belong to an older build or another copy. Remove PashaWhisper with the − button in Accessibility, then use + to add this exact app and enable it. Return here; the status updates automatically. If it still waits, quit and reopen this copy.").font(.system(size: 12)).lineSpacing(4)
+                                Text(model.appLocation).font(Theme.mono(10)).textSelection(.enabled)
+                                Button("SHOW THIS APP IN FINDER") { model.revealRunningApp() }.buttonStyle(BlockButton())
+                                Text("Field access: \(model.permissions.accessibility ? "allowed" : "not allowed") · Paste commands: \(model.permissions.eventPosting ? "allowed" : "not allowed")").font(Theme.mono(10))
+                            }.padding(.top, 10)
+                        }.font(.system(size: 13))
                     }
-                    DisclosureGroup("Already enabled in System Settings?") {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("The enabled entry can belong to an older build or another copy. Remove PashaWhisper with the − button in Accessibility, then use + to add this exact app and enable it. Return here; the status updates automatically. If it still waits, quit and reopen this copy.").font(.system(size: 12)).lineSpacing(4)
-                            Text(model.appLocation).font(Theme.mono(10)).textSelection(.enabled)
-                            Button("SHOW THIS APP IN FINDER") { model.revealRunningApp() }.buttonStyle(BlockButton())
-                            Text("Field access: \(model.permissions.accessibility ? "allowed" : "not allowed") · Paste commands: \(model.permissions.eventPosting ? "allowed" : "not allowed")").font(Theme.mono(10))
-                        }.padding(.top, 10)
-                    }.font(.system(size: 13))
                 }
             }
         }

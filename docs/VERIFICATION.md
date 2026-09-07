@@ -1,4 +1,13 @@
-# Verification — 0.2.5 — September 6, 2026
+# Verification — 0.2.6 — September 7, 2026
+
+- Reproduced the actual permission mismatch in the running app: Accessibility allowed, event posting denied, microphone authorized. Rechecking and requesting event access did not clear it. Quitting and relaunching the same signed app changed event posting to allowed, with no further permission changes.
+- Setup now distinguishes this state from missing Accessibility and offers Restart PashaWhisper. Previewed the restart state in an isolated native SwiftUI window.
+- All 27 tests pass, including recovery-state classification and restart guards for a current result, retry audio, recording, and model downloads. A refreshed ready state does not trigger a restart.
+- Built 0.2.6 with the same signing certificate; deep/strict verification passes. Exercised the LaunchServices replacement process with --relaunch-after, confirmed one running app, and read the actual 0.2.6 Setup indicators: automatic paste ready and microphone ready. No new grant was needed for the update.
+- This pass verifies permission recovery and restart behavior. A new microphone-to-paste session was not recorded; prior isolated text-delivery coverage remains documented below.
+
+## Previous verification — 0.2.5 — September 6, 2026
+
 
 - All 26 tests pass. Permission tests require both Accessibility field access and event-posting access; microphone access is required separately. A model-level test confirms dictation is blocked at Setup when paste access is missing and that refreshing permissions reflects a later grant.
 - The previously packaged 0.2.4 app used an ad-hoc designated requirement tied only to its code hash. The running app displayed a missing-Accessibility result even though the user reported its Settings entry enabled. A stale code identity is the likely explanation; no TCC database was read or changed.
